@@ -6,6 +6,7 @@ import {
   MAX_NAME_LENGTH,
   formatGoal,
 } from '../timer/timerModel';
+import { LedgeButton } from './brand';
 import { useTheme } from './theme';
 
 type Props = {
@@ -74,19 +75,16 @@ export function NewSessionForm({ onStart }: Props) {
         })}
       </View>
 
-      <Pressable
-        testID="start-button"
-        onPress={submit}
-        accessibilityRole="button"
-        style={({ pressed }) => [
-          styles.primary,
-          { backgroundColor: t.accent, opacity: pressed ? 0.8 : 1 },
-        ]}
-      >
-        <Text style={[styles.primaryText, { color: t.accentText }]}>
-          Start Session
-        </Text>
-      </Pressable>
+      <View style={styles.primaryWrap}>
+        <LedgeButton
+          testID="start-button"
+          label="Start Session"
+          onPress={submit}
+          color={t.accent}
+          shade={t.accentShade}
+          textColor={t.accentText}
+        />
+      </View>
     </View>
   );
 }
@@ -115,11 +113,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: { fontSize: 15, fontWeight: '500' },
-  primary: {
-    marginTop: 16,
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  primaryText: { fontSize: 17, fontWeight: '700' },
+  primaryWrap: { marginTop: 16, flexDirection: 'row' },
 });

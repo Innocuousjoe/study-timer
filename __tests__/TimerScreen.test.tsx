@@ -86,12 +86,31 @@ describe('TimerScreen (as a user)', () => {
     const paused = fillColor();
     expect(paused).not.toBe(running);
     const resume = StyleSheet.flatten(
-      screen.getByTestId('pause-resume-button').props.style,
+      screen.getByTestId('pause-resume-button-face').props.style,
     );
     expect(resume.backgroundColor).toBe(running);
 
     await fireEvent.press(screen.getByText('Resume'));
     expect(fillColor()).toBe(running);
+  });
+
+  it('summary card marks a reached goal with a star', async () => {
+    await setup();
+    await fireEvent.press(screen.getByTestId('start-button'));
+    await advance(25 * 60 * 1000 + 10);
+    await fireEvent.press(screen.getByTestId('stop-button'));
+    await act(async () => {});
+    expect(screen.getByLabelText('Goal reached')).toBeOnTheScreen();
+  });
+
+  it('summary card has no star when the goal was not reached', async () => {
+    await setup();
+    await fireEvent.press(screen.getByTestId('start-button'));
+    await advance(60_000);
+    await fireEvent.press(screen.getByTestId('stop-button'));
+    await act(async () => {});
+    expect(screen.getByTestId('completed-card')).toBeOnTheScreen();
+    expect(screen.queryByLabelText('Goal reached')).toBeNull();
   });
 
   it('uses a default name when the field is left blank', async () => {

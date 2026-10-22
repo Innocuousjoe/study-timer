@@ -10,8 +10,9 @@ let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, b
                     space: CGColorSpace(name: CGColorSpace.sRGB)!,
                     bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
 // Full-bleed background; iOS applies the rounded mask itself.
-let colors = [CGColor(srgbRed: 0.36, green: 0.42, blue: 1.0, alpha: 1),
-              CGColor(srgbRed: 0.16, green: 0.18, blue: 0.55, alpha: 1)] as CFArray
+// BoldVoice's logo gradient, #F5277F to #EA7D35 (their CSS: linear-gradient(135deg, ...)).
+let colors = [CGColor(srgbRed: 0xF5 / 255.0, green: 0x27 / 255.0, blue: 0x7F / 255.0, alpha: 1),
+              CGColor(srgbRed: 0xEA / 255.0, green: 0x7D / 255.0, blue: 0x35 / 255.0, alpha: 1)] as CFArray
 let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors, locations: [0, 1])!
 ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: s), end: CGPoint(x: s, y: 0), options: [])
 

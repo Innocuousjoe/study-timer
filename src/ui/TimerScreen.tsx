@@ -26,7 +26,8 @@ import {
 } from '../timer/timerModel';
 import { useStudyTimer, type KeyValueStore } from '../timer/useStudyTimer';
 import { NewSessionForm } from './NewSessionForm';
-import { useTheme, type Theme } from './theme';
+import { BrandAccentEdge, BrandGradientBar, LedgeButton } from './brand';
+import { brand, useTheme, type Theme } from './theme';
 
 type Props = {
   storage: KeyValueStore;
@@ -35,7 +36,7 @@ type Props = {
   showDebug?: boolean;
 };
 
-type Completed = { name: string; elapsed: number };
+type Completed = { name: string; elapsed: number; goalReached: boolean };
 
 export function TimerScreen({
   storage,
@@ -55,9 +56,11 @@ export function TimerScreen({
     if (session) {
       // Computed now, not from this render: when called from the "End & Start
       // New" alert, the render is from when the alert opened.
+      const elapsed = elapsedSeconds(session, Date.now());
       setCompleted({
         name: session.name,
-        elapsed: elapsedSeconds(session, Date.now()),
+        elapsed,
+        goalReached: session.goalSeconds > 0 && elapsed >= session.goalSeconds,
       });
     }
     timer.stop();
@@ -231,7 +234,10 @@ export function TimerScreen({
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.title, { color: t.text }]}>Study Timer</Text>
+        <View style={styles.titleBlock}>
+          <Text style={[styles.title, { color: t.text }]}>Study Timer</Text>
+          <BrandGradientBar />
+        </View>
         {timer.liveActivityStatus === 'off' && (
           <LiveActivitiesOffBanner t={t} />
         )}
@@ -262,50 +268,57 @@ function Button({
   variant: 'primary' | 'danger';
   testID?: string;
 }) {
-  const color = variant === 'primary' ? t.accent : t.danger;
-  return (
-    <Pressable
+  return variant === 'primary' ? (
+    <LedgeButton
       testID={testID}
+      label={label}
       onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [
-        styles.button,
-        {
-          backgroundColor: variant === 'primary' ? color : 'transparent',
-          borderColor: color,
-          opacity: pressed ? 0.75 : 1,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          styles.buttonText,
-          { color: variant === 'primary' ? t.accentText : color },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
+      color={t.accent}
+      shade={t.accentShade}
+      textColor={t.accentText}
+    />
+  ) : (
+    <LedgeButton
+      testID={testID}
+      label={label}
+      onPress={onPress}
+      variant="outlined"
+      color={t.danger}
+      shade={t.dangerShade}
+      textColor={t.danger}
+    />
   );
 }
 
 function CompletedCard({ t, completed }: { t: Theme; completed: Completed }) {
   return (
     <View
+      testID="completed-card"
       style={[
         styles.card,
         { backgroundColor: t.surface, borderColor: t.border },
       ]}
     >
+      <BrandAccentEdge />
       <Text style={[styles.cardLabel, { color: t.muted }]}>
         Session complete
       </Text>
       <Text style={[styles.cardName, { color: t.text }]} numberOfLines={2}>
         {completed.name}
       </Text>
-      <Text style={[styles.cardTime, { color: t.text }]}>
-        {formatHMS(completed.elapsed)}
-      </Text>
+      <View style={styles.cardRow}>
+        <Text style={[styles.cardTime, { color: t.text }]}>
+          {formatHMS(completed.elapsed)}
+        </Text>
+        {completed.goalReached && (
+          <Text
+            style={[styles.cardGoal, { color: t.text }]}
+            accessibilityLabel="Goal reached"
+          >
+            <Text style={{ color: brand.gold }}>★</Text> Goal reached
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -430,7 +443,8 @@ function spokenDuration(total: number): string {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { paddingHorizontal: 24, gap: 16, flexGrow: 1 },
-  title: { fontSize: 32, fontWeight: '800', marginBottom: 8 },
+  titleBlock: { gap: 8, marginBottom: 8 },
+  title: { fontSize: 32, fontWeight: '800' },
   loading: { marginTop: 80 },
   active: { alignItems: 'center', gap: 12, marginTop: 24 },
   name: { fontSize: 24, fontWeight: '700', textAlign: 'center' },
@@ -460,14 +474,6 @@ const styles = StyleSheet.create({
     marginTop: 24,
     alignSelf: 'stretch',
   },
-  button: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 14,
-    borderWidth: 2,
-    alignItems: 'center',
-  },
-  buttonText: { fontSize: 17, fontWeight: '700' },
   divider: {
     height: StyleSheet.hairlineWidth,
     alignSelf: 'stretch',
@@ -476,7 +482,9 @@ const styles = StyleSheet.create({
   link: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
   card: {
     padding: 16,
+    paddingLeft: 19, // clears the 3px accent edge
     borderRadius: 14,
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     gap: 4,
   },
@@ -488,6 +496,12 @@ const styles = StyleSheet.create({
   },
   cardName: { fontSize: 18, fontWeight: '600' },
   cardTime: { fontSize: 28, fontWeight: '300', fontVariant: ['tabular-nums'] },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  cardGoal: { fontSize: 15, fontWeight: '600' },
   banner: { padding: 14, borderRadius: 12 },
   bannerText: { fontSize: 14, lineHeight: 20 },
   debug: {

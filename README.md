@@ -82,6 +82,14 @@ Key files: `src/timer/timerModel.ts`, `src/timer/reconcile.ts`, `src/timer/useSt
 
 `scripts/configure-xcode-project.rb` is the idempotent script that added the widget and test targets with the `xcodeproj` gem. The result is checked in, so you don't need to run it.
 
+## Design touches
+
+The app's own colors are a purple accent and a green for goals. It borrows a few touches from BoldVoice's site, taken from boldvoice.com's CSS tokens and logo (`src/ui/theme.ts` → `brand`):
+
+- **App icon.** The pink-to-orange logo gradient, `#F5277F` → `#EA7D35`. A thin bar of the same gradient sits under the title.
+- **Buttons.** Pill-shaped, with the solid offset "ledge" they press down into, like BoldVoice's `.button`.
+- **Session summary card.** The 3px burnt-orange (`#D45530`) left edge from their blog blockquotes, plus a gold (`#FFB800`) star when the goal was reached.
+
 ## Debug automation
 
 Debug builds accept commands as a launch argument, so the real app can be driven from scripts with no taps:
