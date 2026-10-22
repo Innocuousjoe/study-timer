@@ -3,7 +3,7 @@
 # launches it, starting Metro in the background if it isn't running.
 # Usage: scripts/run-ios.sh            (SIMULATOR_UDID=<udid> to pick a device)
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"  # -P: lsof reports resolved paths (/tmp → /private/tmp)
 cd "$ROOT"
 
 SIM=$(scripts/find-simulator.sh) || { echo "No Dynamic Island simulator found; run scripts/doctor.sh"; exit 1; }

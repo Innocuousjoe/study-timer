@@ -9,7 +9,7 @@ A React Native iOS study timer with a **Live Activity** on the Lock Screen and i
 ## Requirements
 
 - macOS with **Xcode 16+**. Built and tested with Xcode 27.
-- **Node 22.11+** and **CocoaPods**: `brew install node cocoapods`
+- **Node 22.11 or newer** and **CocoaPods**: `brew install node cocoapods`
 - An **iOS 17+ simulator with a Dynamic Island**: iPhone 15 Pro or newer, not an "e" model.
 
 ## Setup and run
@@ -19,11 +19,13 @@ From the repo root:
 ```sh
 scripts/doctor.sh                 # checks Xcode, Node, CocoaPods and a suitable simulator
 npm ci                            # JS dependencies
-(cd ios && pod install)           # native dependencies; also runs React Native codegen
+(cd ios && pod install)           # native dependencies; also runs React Native codegen (ignore its "yarn ios" hint)
 scripts/run-ios.sh                # boots a simulator, starts Metro, builds, installs, launches
 ```
 
 `run-ios.sh` picks a booted Dynamic Island simulator if there is one, otherwise the newest available. To choose one, set `SIMULATOR_UDID=<udid> scripts/run-ios.sh`; `xcrun simctl list devices available` lists the UDIDs. Build output goes to `/tmp/study-timer-build.log` and Metro's to `/tmp/study-timer-metro.log`.
+
+Metro keeps running in the background after the script exits. Stop it with `kill $(lsof -ti tcp:8081 -sTCP:LISTEN)`. If port 8081 is taken by another project's Metro, the script says so and exits instead of loading the wrong bundle.
 
 To see the simulator, use Xcode's **Device Hub** (Xcode 27) or **Simulator.app** (earlier Xcodes). The Lock Screen and Dynamic Island only show there; `simctl` screenshots don't capture them.
 
@@ -33,7 +35,7 @@ You can also open `ios/StudyTimer.xcworkspace` in Xcode and press Run with the *
 
 ```sh
 npm test            # Jest: timer model, reconcile logic, bridge queue, hook, screen
-npm run test:ios    # XCTest: Swift Live Activity controller and shared model
+npm run test:ios    # XCTest: Swift Live Activity controller and shared model (SIMULATOR_UDID=<udid> to choose a simulator)
 npm run typecheck && npm run lint
 ```
 
@@ -89,7 +91,7 @@ xcrun simctl launch --terminate-running-process booted com.ncoelius.studytimer \
   -debugCommand "studytimer://debug/start?name=Chapter%205&goal=1500"   # or: pause, resume, stop, stress
 ```
 
-The same URLs work with `xcrun simctl openurl`, but iOS then asks "Open in Study Timer?".
+If more than one simulator is booted, replace `booted` with the UDID. The same URLs work with `xcrun simctl openurl`, but iOS then asks "Open in Study Timer?".
 
 To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also shows it. The panel shows how many Live Activities ActivityKit reports and runs a 20-cycle start/stop stress test. The expected result is "0 activities left". The panel is hidden otherwise, and none of this is compiled into release builds.
 

@@ -23,6 +23,7 @@ command -v pod >/dev/null || fail "CocoaPods not found" "brew install cocoapods"
 ok "CocoaPods $(pod --version)"
 
 SIM=$("$(dirname "$0")/find-simulator.sh" 2>/dev/null) || fail "No simulator with a Dynamic Island" "In Xcode > Settings > Components, install an iOS 17+ runtime, then add an iPhone 15 Pro or newer."
-ok "Simulator $SIM"
+NAME=$(xcrun simctl list devices | grep "$SIM" | sed -E 's/^ *(.*) \([0-9A-F-]{36}\).*/\1/' | head -1)
+ok "Dynamic Island simulator available (default: $NAME, $SIM; override with SIMULATOR_UDID=<udid>)"
 
 echo "All set."
