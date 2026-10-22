@@ -1,97 +1,102 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Study Timer
 
-# Getting Started
+A React Native iOS study timer with a **Live Activity** on the Lock Screen and in the **Dynamic Island**. The React Native app runs the timer. A native TurboModule mirrors its state to ActivityKit, and a SwiftUI widget extension renders it.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+- Start a named session with an optional goal (25 / 50 / 90 min, or none). The timer counts up as `HH:MM:SS`, and you can pause, resume and stop it.
+- The Live Activity appears on start, keeps time while the app is backgrounded or killed, reflects pause and resume, and disappears on stop.
+- The Dynamic Island has compact (name + time), expanded (full name, time, progress ring) and minimal (time) views.
 
-## Step 1: Start Metro
+## Requirements
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- macOS with **Xcode 16+**. Built and tested with Xcode 27.
+- **Node 22.11+** and **CocoaPods**: `brew install node cocoapods`
+- An **iOS 17+ simulator with a Dynamic Island**: iPhone 15 Pro or newer, not an "e" model.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Setup and run
 
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
+From the repo root:
 
 ```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+scripts/doctor.sh                 # checks Xcode, Node, CocoaPods and a suitable simulator
+npm ci                            # JS dependencies
+(cd ios && pod install)           # native dependencies; also runs React Native codegen
+scripts/run-ios.sh                # boots a simulator, starts Metro, builds, installs, launches
 ```
 
-### iOS
+`run-ios.sh` picks a booted Dynamic Island simulator if there is one, otherwise the newest available. To choose one, set `SIMULATOR_UDID=<udid> scripts/run-ios.sh`; `xcrun simctl list devices available` lists the UDIDs. Build output goes to `/tmp/study-timer-build.log` and Metro's to `/tmp/study-timer-metro.log`.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+To see the simulator, use Xcode's **Device Hub** (Xcode 27) or **Simulator.app** (earlier Xcodes). The Lock Screen and Dynamic Island only show there; `simctl` screenshots don't capture them.
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+You can also open `ios/StudyTimer.xcworkspace` in Xcode and press Run with the **StudyTimer** scheme. No signing team is needed for the simulator.
+
+## Tests
 
 ```sh
-bundle install
+npm test            # Jest: timer model, reconcile logic, bridge queue, hook, screen
+npm run test:ios    # XCTest: Swift Live Activity controller and shared model
+npm run typecheck && npm run lint
 ```
 
-Then, and every time you update your native dependencies, run:
+- The JS tests pass `now` into the timer logic instead of reading the clock, so most of them need no fake timers.
+- The hook tests use Jest fake timers to show the display doesn't drift: they jump the wall clock 10 minutes "in the background" without firing any intervals.
+- The Swift tests use a fake ActivityKit that suspends inside every call. That's what exposes interleaving bugs: with the serial queue removed, the burst test leaves 8 zombie activities.
+
+## Demo walkthrough
+
+1. Type a session name, keep the 25 min goal and tap **Start Session**.
+2. Go to the Home Screen. The compact Dynamic Island shows the name and a ticking time. Long-press it for the expanded view.
+3. Lock the simulator (the lock button in Xcode's Device Hub, or **Device > Lock** in Simulator.app). The first time, iOS asks **"Allow Live Activities from Study Timer?"**; tap **Allow**. The Lock Screen shows the name, the time and the goal progress bar.
+4. Back in the app, tap **Pause**. The activity freezes and shows "Paused", with the ring grayed out. **Resume** continues from the same time.
+5. Kill the app from the app switcher. The Live Activity keeps counting. Relaunch, and the app restores the session and reattaches to the same activity.
+6. Tap **Stop**. The Live Activity is dismissed immediately.
+
+## How it works
+
+```
+React Native (TypeScript)                       iOS (Swift)
+──────────────────────────                      ───────────────────────────────────
+TimerScreen ── useStudyTimer ── liveActivity ──▶ RCTLiveActivity.mm (TurboModule)
+                │  (reducer,      (FIFO queue)        │
+                │   AsyncStorage,                     ▼
+                │   reconcile)                  LiveActivityBridge ─▶ LiveActivityController
+                ▼                                                      (serial job queue)
+         timerModel.ts                                                       │
+         (pure, timestamp-based)                                             ▼
+                                                                         ActivityKit
+                                                                             │
+                                              StudyTimerWidget (SwiftUI) ◀───┘
+                                              Lock Screen + Dynamic Island
+```
+
+- **Timestamps, not ticks.** A session stores an effective `startDate` (the real start shifted forward by time spent paused) and `pausedAt`. The app derives the display from these, and the Live Activity receives the same two values.
+- **The Live Activity ticks itself.** The widget uses `Text(timerInterval:)` and `ProgressView(timerInterval:)`, which iOS animates with no updates from the app. The app sends an ActivityKit update only on start, pause, resume and stop. So the Lock Screen stays accurate while the app is suspended or killed, and the app never runs into ActivityKit's update throttling.
+- **Typed bridge.** `src/native/NativeLiveActivity.ts` is the TurboModule spec. Codegen generates the Objective-C++ protocol, and `RCTLiveActivity.mm` (a thin shim, needed because Swift can't adopt C++-typed protocols) forwards to Swift. If the spec and the native side disagree, the build fails.
+- **No zombie activities.** Calls are serialized in JS (a promise queue) and in Swift (a single-consumer job queue; a plain actor isn't enough because actors are re-entrant across `await`). `start` always ends existing activities first.
+- **Crash recovery.** Every change is written to AsyncStorage before ActivityKit is told. On launch and on every return to the foreground, `reconcile()` compares the saved session with the live activities: it ends strays, recreates a missing activity, and fixes one whose state drifted.
+- **One source for the activity's data.** `ios/Shared/StudyTimerAttributes.swift` is compiled into both the app and the widget, so the two can't define it differently.
+
+Key files: `src/timer/timerModel.ts`, `src/timer/reconcile.ts`, `src/timer/useStudyTimer.ts`, `src/native/`, `ios/StudyTimer/LiveActivity/`, `ios/StudyTimerWidget/StudyTimerLiveActivity.swift`.
+
+`scripts/configure-xcode-project.rb` is the idempotent script that added the widget and test targets with the `xcodeproj` gem. The result is checked in, so you don't need to run it.
+
+## Debug automation
+
+Debug builds accept commands as a launch argument, so the real app can be driven from scripts with no taps:
 
 ```sh
-bundle exec pod install
+xcrun simctl launch --terminate-running-process booted com.ncoelius.studytimer \
+  -debugCommand "studytimer://debug/start?name=Chapter%205&goal=1500"   # or: pause, resume, stop, stress
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+The same URLs work with `xcrun simctl openurl`, but iOS then asks "Open in Study Timer?". A DEBUG panel at the bottom of the screen shows how many Live Activities ActivityKit reports and runs a 20-cycle start/stop stress test. The expected result is "0 activities left". None of this is compiled into release builds.
 
-```sh
-# Using npm
-npm run ios
+## Assumptions
 
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- **Goal and progress.** The spec asks for a progress ring but not what it measures. It measures progress toward an optional goal (25 / 50 / 90 min, default 25). Past the goal the ring stays full and the app shows "Goal reached". With no goal, the island shows a plain ring and the app hides the bar.
+- **Time format on the Live Activity.** The app always shows `HH:MM:SS`. The Live Activity uses the system's self-updating timer, which formats as `M:SS` under an hour and `H:MM:SS` above. No system format produces a ticking `HH:MM:SS`; I checked `Text(timerInterval:)` and iOS 18's `SystemFormatStyle.Timer`. The paused text uses the same format, so the clock doesn't change shape when you pause.
+- **Dimmed Lock Screen.** In Always-On / reduced-luminance mode, iOS stops ticking seconds and would show `7:--`. The Lock Screen switches to a minute-precision system format ("7 minutes") in that state.
+- **"Time left" rounds down.** The label under the in-app progress bar shows time left rounded down to the minute ("1 hour, 2 min left" with 1 h 2 m 32 s remaining, and "Less than 1 min left" under a minute). It therefore lags the `HH:MM:SS` clock by up to 59 seconds. Rounding down avoids promising time that isn't there, and other apps seem to do the same. Even so, we'd test it with real users to see whether the mismatch is noticeable or bothersome.
+- **App killed.** The Live Activity persists with the correct time, since it ticks itself. The spec allows either ending it or keeping it. On relaunch the app restores the session and reattaches.
+- **One session at a time.** "Start New Session" during a session asks for confirmation, then ends the current one.
+- **Activity lifetime.** iOS ends a Live Activity after about 8 hours. If a session runs longer, the app recreates the activity the next time it comes to the foreground.
+- **Platform.** iOS 17.0+ only, tested on the simulator as the spec allows. Running on a device needs a signing team set in Xcode for the StudyTimer and StudyTimerWidget targets.
