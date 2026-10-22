@@ -1,4 +1,27 @@
 PODS:
+  - AsyncStorage (3.1.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - boost (1.84.0):
     - ReactNativeDependencies
   - DoubleConversion (1.1.6):
@@ -1819,6 +1842,7 @@ PODS:
     - React-Core-prebuilt
 
 DEPENDENCIES:
+  - "AsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - boost (from `build/rndeps-facades/boost`)
   - DoubleConversion (from `build/rndeps-facades/DoubleConversion`)
   - fast_float (from `build/rndeps-facades/fast_float`)
@@ -1909,6 +1933,8 @@ DEPENDENCIES:
   - Yoga (from `build/rncore-facades/Yoga`)
 
 EXTERNAL SOURCES:
+  AsyncStorage:
+    :path: "../node_modules/@react-native-async-storage/async-storage"
   boost:
     :path: build/rndeps-facades/boost
   DoubleConversion:
@@ -2086,6 +2112,7 @@ EXTERNAL SOURCES:
     :path: build/rncore-facades/Yoga
 
 SPEC CHECKSUMS:
+  AsyncStorage: d6deeca6c42d671c57f78abf400aad622f13bb75
   boost: 8502bfdc46e2804408af2e163049ece181009af4
   DoubleConversion: 501a575c40c0b50c89685762dd3e415e6bb26fb0
   fast_float: 7c925d1cebf8328d4018d061f49377e9f887e3b4
@@ -2174,6 +2201,6 @@ SPEC CHECKSUMS:
   SocketRocket: 37aec555668fb852ec12e3c0de59a86ca58f0871
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
 
-PODFILE CHECKSUM: 04f42366d97239d8daee0e490ab813a3d598438a
+PODFILE CHECKSUM: efd5cbccb924df3389f01673811925dcf821e300
 
 COCOAPODS: 1.17.0
