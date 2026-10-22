@@ -21,7 +21,7 @@ import type { LiveActivityClient } from '../native/liveActivity';
 import { formatGoal, formatHMS, formatTimeLeft } from '../timer/timerModel';
 import { useStudyTimer, type KeyValueStore } from '../timer/useStudyTimer';
 import { NewSessionForm } from './NewSessionForm';
-import { BrandGradientBar, LedgeButton } from './brand';
+import { BrandGradientBar, PillButton } from './brand';
 import { useTheme, type Theme } from './theme';
 
 type Props = {
@@ -239,22 +239,20 @@ function Button({
   testID?: string;
 }) {
   return variant === 'primary' ? (
-    <LedgeButton
+    <PillButton
       testID={testID}
       label={label}
       onPress={onPress}
       color={t.accent}
-      shade={t.accentShade}
       textColor={t.accentText}
     />
   ) : (
-    <LedgeButton
+    <PillButton
       testID={testID}
       label={label}
       onPress={onPress}
       variant="outlined"
       color={t.danger}
-      shade={t.dangerShade}
       textColor={t.danger}
     />
   );

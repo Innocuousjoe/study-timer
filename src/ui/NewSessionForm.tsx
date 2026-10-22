@@ -6,7 +6,7 @@ import {
   MAX_NAME_LENGTH,
   formatGoal,
 } from '../timer/timerModel';
-import { LedgeButton } from './brand';
+import { PillButton } from './brand';
 import { useTheme } from './theme';
 
 type Props = {
@@ -76,12 +76,11 @@ export function NewSessionForm({ onStart }: Props) {
       </View>
 
       <View style={styles.primaryWrap}>
-        <LedgeButton
+        <PillButton
           testID="start-button"
           label="Start Session"
           onPress={submit}
           color={t.accent}
-          shade={t.accentShade}
           textColor={t.accentText}
         />
       </View>

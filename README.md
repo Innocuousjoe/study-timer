@@ -87,7 +87,7 @@ Key files: `src/timer/timerModel.ts`, `src/timer/reconcile.ts`, `src/timer/useSt
 The app's own colors are a purple accent and a green for goals. It borrows a few touches from BoldVoice's site, taken from boldvoice.com's CSS tokens and logo (`src/ui/theme.ts` → `brand`):
 
 - **App icon.** The pink-to-orange logo gradient, `#F5277F` → `#EA7D35`. A thin bar of the same gradient sits under the title.
-- **Buttons.** Pill-shaped, with the solid offset "ledge" they press down into, like BoldVoice's `.button`.
+- **Buttons.** Flush pills, like the call-to-action buttons on BoldVoice's homepage (`.home-btn`, 40px radius), but filled in the app's purple instead of their gradient.
 
 ## Debug automation
 
@@ -147,6 +147,7 @@ I built this with Claude Code. Below is where it was wrong, how each problem was
 - The generated Swift header needs a React Native header imported first.
 - `simctl openurl` triggers an "Open in Study Timer?" prompt that a script can't tap, so debug commands moved to launch arguments.
 - **"React Native has no built-in gradient."** The AI first built the title's gradient bar from 24 solid-color slices. When I questioned it, it checked the installed React Native and found that 0.88 supports CSS `linear-gradient(...)` through the `backgroundImage` style. The bar is now a single view, stretched to the title's width.
+- **Buttons copied from an unused CSS rule.** The AI gave the buttons a raised "ledge" because one of BoldVoice's stylesheets has a `.button` rule with an offset shadow. I pointed out that their live buttons are flush. The rule turned out to be legacy: no page uses that class. The real buttons (`.home-btn`) are flat pills that only lift on mouse hover, which touch screens don't have. Lesson: check that a rule is used, not just defined.
 - The generated app icon came out solid black twice. The AI caught this by looking at the PNG before using it.
 - `run-ios.sh` would have refused its own Metro under `/tmp`, because macOS resolves `/tmp` to `/private/tmp`. A separate agent following only the README in a fresh clone caught this. It also found several places where the README made you guess.
 - Splitting the work into commits that each build on their own needed rebuilt lockfiles. `pod install` rewrote two of them in a clean checkout, so the first and second commits were fixed to use the lockfiles they generate themselves.
