@@ -48,7 +48,7 @@ npm run typecheck && npm run lint
 1. Type a session name, keep the 25 min goal and tap **Start Session**.
 2. Go to the Home Screen. The compact Dynamic Island shows the name and a ticking time. Long-press it for the expanded view.
 3. Lock the simulator (the lock button in Xcode's Device Hub, or **Device > Lock** in Simulator.app). The first time, iOS asks **"Allow Live Activities from Study Timer?"**; tap **Allow**. The Lock Screen shows the name, the time and the goal progress bar.
-4. Back in the app, tap **Pause**. The activity freezes and shows "Paused", with the ring grayed out. **Resume** continues from the same time.
+4. Back in the app, tap **Pause**. The activity freezes and shows "Paused". In the expanded Dynamic Island the ring turns gray. **Resume** continues from the same time.
 5. Kill the app from the app switcher. The Live Activity keeps counting. Relaunch, and the app restores the session and reattaches to the same activity.
 6. Tap **Stop**. The Live Activity is dismissed immediately.
 
@@ -72,7 +72,7 @@ TimerScreen ── useStudyTimer ── liveActivity ──▶ RCTLiveActivity.m
 
 - **Timestamps, not ticks.** A session stores an effective `startDate` (the real start shifted forward by time spent paused) and `pausedAt`. The app derives the display from these, and the Live Activity receives the same two values.
 - **The Live Activity ticks itself.** The widget uses `Text(timerInterval:)` and `ProgressView(timerInterval:)`, which iOS animates with no updates from the app. The app sends an ActivityKit update only on start, pause, resume and stop. So the Lock Screen stays accurate while the app is suspended or killed, and the app never runs into ActivityKit's update throttling.
-- **Typed bridge.** `src/native/NativeLiveActivity.ts` is the TurboModule spec. Codegen generates the Objective-C++ protocol, and `RCTLiveActivity.mm` (a thin shim, needed because Swift can't adopt C++-typed protocols) forwards to Swift. If the spec and the native side disagree, the build fails.
+- **Typed bridge.** `src/native/NativeLiveActivity.ts` is the TurboModule spec. Codegen generates the Objective-C++ protocol, and `RCTLiveActivity.mm` (a thin shim, needed because Swift can't adopt C++-typed protocols) forwards to Swift. If a method or argument in the spec doesn't match the native side, the build fails. The objects that promises resolve with aren't type-checked, so the JS side normalizes them (`liveActivity.ts`).
 - **No zombie activities.** Calls are serialized in JS (a promise queue) and in Swift (a single-consumer job queue that each bridge method submits to synchronously, before returning). A plain actor isn't enough, because actors are re-entrant across `await`. Neither is a `Task` per call, since Tasks can start out of order. `start` always ends existing activities first, including ones iOS has already ended.
 - **Crash recovery.** Every change is written to AsyncStorage before ActivityKit is told. On launch and on every return to the foreground, `reconcile()` compares the saved session with the activities on screen. It ends strays, fixes an activity whose state drifted, and replaces one iOS ended at its time limit. If saving fails, ActivityKit is still told.
 - **Goal reached without the app.** While running, each update's `staleDate` is set to the moment the goal is reached (`ContentState.goalDate`). iOS re-renders the activity at that moment, and the widget turns it green with "Goal reached". Staleness isn't used for anything else.
@@ -93,7 +93,7 @@ xcrun simctl launch --terminate-running-process booted com.ncoelius.studytimer \
 
 If more than one simulator is booted, replace `booted` with the UDID. The same URLs work with `xcrun simctl openurl`, but iOS then asks "Open in Study Timer?".
 
-To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also shows it. The panel shows how many Live Activities ActivityKit reports and runs a 20-cycle start/stop stress test. The expected result is "0 activities left". The panel is hidden otherwise, and none of this is compiled into release builds.
+To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also shows it. The panel shows how many Live Activities ActivityKit reports and runs a 20-cycle start/stop stress test. The expected result is "0 activities left". The panel is hidden otherwise. In release builds all of this is switched off by `__DEV__` checks. It's still in the bundle, but it never runs.
 
 ## Assumptions
 
@@ -105,7 +105,7 @@ To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also
 - **One session at a time.** "Start New Session" during a session asks for confirmation. "End & Start New" then ends the current session right away, showing its summary, and opens the new-session form.
 - **Swiping the Live Activity away.** If the user dismisses it from the Lock Screen, it stays dismissed for the rest of that session. The next session shows a new one. If Live Activities were off when the session started and are turned on later, the activity appears the next time the app comes to the foreground.
 - **Activity lifetime.** iOS ends a Live Activity after about 8 hours, but it can linger on the Lock Screen for hours. The next time the app comes to the foreground, it dismisses the lingering one and starts a fresh one. Stop always clears both.
-- **Goal reached on the Live Activity.** It flips to "Goal reached" at the goal time while running, through `staleDate` (see How it works). iOS won't mark an activity stale sooner than about 2 minutes after its last update. The 25 / 50 / 90 min goals flip on time, but resuming with less than 2 minutes to the goal makes the flip land about 2 minutes after the resume. I saw this in the system log: a 1-minute goal flipped at 2 minutes, and a 3-minute goal flipped on time. A paused activity is frozen, so it shows "Goal reached" only if it was paused after the goal.
+- **Goal reached on the Live Activity.** It flips to "Goal reached" at the goal time while running, through `staleDate` (see How it works). iOS won't mark an activity stale sooner than about 2 minutes after its last update. I saw this in the system log: a 1-minute goal flipped at 2 minutes, and a 3-minute goal flipped on time. So the 25 / 50 / 90 min goals flip on time. Resuming with less than 2 minutes to the goal makes the flip land up to about 2 minutes late. When an update arrives after the goal has already passed (resuming after the goal, a replacement activity), the widget also compares against the current time, so it shows "Goal reached" straight away. A paused activity always reads "Paused", in gray, and the app does the same.
 - **Clock changes.** All times are epoch milliseconds, so time zone changes have no effect. If the user sets the clock back while paused, resuming keeps the paused time exactly. While running, the elapsed time follows the wall clock.
 - **Platform.** iOS 17.0+ only, tested on the simulator as the spec allows. Running on a device needs a signing team set in Xcode for the StudyTimer and StudyTimerWidget targets.
 

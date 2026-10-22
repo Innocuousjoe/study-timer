@@ -5,19 +5,20 @@ import WidgetKit
 private let accent = Color(red: 0.49, green: 0.55, blue: 1.0)
 private let goalGreen = Color(red: 0.40, green: 0.73, blue: 0.42)
 
-/// Whether the goal has been reached, as of this render.
-/// - Paused: from the frozen elapsed time.
-/// - Running: the app sets the content's `staleDate` to the goal moment
+/// Whether to show "Goal reached" in this render (running sessions only;
+/// a paused activity always reads as paused).
+/// - At the goal moment: the app sets the content's `staleDate` to the goal
 ///   (`ContentState.goalDate`), so iOS re-renders with `isStale == true`
-///   exactly then, with no app involvement. This is the only place that
-///   reads `isStale`; we don't use staleness for anything else.
+///   then, with no app involvement. This is the only place that reads
+///   `isStale`; staleness isn't used for anything else.
+/// - Already past the goal when this content arrived (resume after the goal,
+///   a replacement activity, a reconcile update): iOS waits ~2 min before
+///   marking it stale, so also compare against the render time.
 private func goalReached(_ context: ActivityViewContext<StudyTimerAttributes>) -> Bool {
-  let goal = context.attributes.goalSeconds
-  guard goal > 0 else { return false }
-  if let pausedAt = context.state.pausedAt {
-    return context.state.elapsed(at: pausedAt) >= TimeInterval(goal)
+  guard let goalDate = context.state.goalDate(goalSeconds: context.attributes.goalSeconds) else {
+    return false  // paused, or no goal
   }
-  return context.isStale
+  return context.isStale || Date() >= goalDate
 }
 
 struct StudyTimerLiveActivity: Widget {
@@ -56,7 +57,7 @@ struct StudyTimerLiveActivity: Widget {
               .minimumScaleFactor(0.85)
               .multilineTextAlignment(.center)
             if attributes.hasGoal {
-              Text("Goal \(formatGoal(attributes.goalSeconds))")
+              Text("\(formatGoal(attributes.goalSeconds)) goal")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
@@ -119,7 +120,7 @@ struct LockScreenView: View {
         StatusLabel(state: state, goalReached: goalReached)
         Spacer()
         if attributes.hasGoal {
-          Text("Goal \(formatGoal(attributes.goalSeconds))")
+          Text("\(formatGoal(attributes.goalSeconds)) goal")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -194,7 +195,7 @@ struct GoalBar: View {
     .progressViewStyle(.linear)
     // The Lock Screen bar keeps its color while paused (only the island ring
     // grays out); it turns green once the goal is reached.
-    .tint(goalReached && !state.isPaused ? goalGreen : accent)
+    .tint(goalReached ? goalGreen : accent)
   }
 
   private var goalInterval: ClosedRange<Date> {
