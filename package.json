@@ -40,5 +40,15 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "codegenConfig": {
+    "name": "StudyTimerSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/native",
+    "ios": {
+      "modulesProvider": {
+        "LiveActivity": "RCTLiveActivity"
+      }
+    }
   }
 }
