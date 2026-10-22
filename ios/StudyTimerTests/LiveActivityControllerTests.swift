@@ -37,10 +37,11 @@ actor FakeActivityClient: ActivityClient {
     log.append("end:\(activityId)")
   }
 
-  func seed(sessionId: String) -> String {
+  func seed(sessionId: String, isEnded: Bool = false) -> String {
     nextId += 1
     let id = "a\(nextId)"
-    activities.append(ActivitySnapshot(activityId: id, sessionId: sessionId, state: .init(startDateMs: 0, pausedAtMs: nil)))
+    activities.append(ActivitySnapshot(
+      activityId: id, sessionId: sessionId, state: .init(startDateMs: 0, pausedAtMs: nil), isEnded: isEnded))
     return id
   }
 }
@@ -91,30 +92,66 @@ final class LiveActivityControllerTests: XCTestCase {
     XCTAssertTrue(activities.isEmpty)
   }
 
-  /// Calls submitted without awaiting (as the JS bridge does) still run in
-  /// order and never interleave: the burst ends with exactly the last session.
-  func testRapidStartStopBurstLeavesExactlyTheFinalState() async throws {
+  /// The bridge calls the completion-based API without awaiting, like the
+  /// TurboModule does. Each call enqueues before returning, so a burst runs in
+  /// exactly call order and ends with exactly the last requested state.
+  func testRapidStartStopBurstRunsInCallOrder() async {
     let client = FakeActivityClient()
     let controller = LiveActivityController(client: client)
+    let done = expectation(description: "burst finished")
+    done.expectedFulfillmentCount = 101
 
-    await withTaskGroup(of: Void.self) { group in
-      // Each job is submitted in order from this task before any of them run.
-      for i in 0..<50 {
-        let s = session("s\(i)")
-        let start = Task { _ = try? await controller.start(s) }
-        let stop = Task { await controller.endAll() }
-        group.addTask { _ = await start.result }
-        group.addTask { _ = await stop.result }
-      }
+    for i in 0..<50 {
+      controller.start(session("s\(i)")) { _ in done.fulfill() }
+      controller.endAll { done.fulfill() }
     }
-    // Whatever order the unstructured Tasks reached the queue in, there can
-    // never be more than one activity alive.
-    let afterBurst = await client.activities
-    XCTAssertLessThanOrEqual(afterBurst.count, 1)
+    controller.start(session("final")) { _ in done.fulfill() }
+    await fulfillment(of: [done], timeout: 5)
 
-    _ = try await controller.start(session("final"))
+    let requests = await client.log.filter { $0.hasPrefix("request") }
+    XCTAssertEqual(requests, (0..<50).map { "request:s\($0)" } + ["request:final"])
     let final = await client.activities
     XCTAssertEqual(final.map(\.sessionId), ["final"])
+  }
+
+  func testUnawaitedTasksNeverLeaveMoreThanOneActivity() async {
+    // Even callers racing from separate Tasks can't interleave jobs.
+    let client = FakeActivityClient()
+    let controller = LiveActivityController(client: client)
+    await withTaskGroup(of: Void.self) { group in
+      for i in 0..<50 {
+        group.addTask { _ = try? await controller.start(session("s\(i)")) }
+        group.addTask { await controller.endAll() }
+      }
+    }
+    let count = await client.activities.count
+    XCTAssertLessThanOrEqual(count, 1)
+  }
+
+  func testStartAndEndAllClearActivitiesIOSAlreadyEnded() async throws {
+    let client = FakeActivityClient()
+    let lingering = await client.seed(sessionId: "s1", isEnded: true)
+    let controller = LiveActivityController(client: client)
+
+    await controller.endAll()
+    var activities = await client.activities
+    XCTAssertTrue(activities.isEmpty)
+
+    _ = await client.seed(sessionId: "s1", isEnded: true)
+    let id = try await controller.start(session("s2"))
+    activities = await client.activities
+    XCTAssertEqual(activities.map(\.activityId), [id])
+    let log = await client.log
+    XCTAssertTrue(log.contains("end:\(lingering)"))
+  }
+
+  func testUpdateSkipsEndedActivities() async {
+    let client = FakeActivityClient()
+    let ended = await client.seed(sessionId: "s1", isEnded: true)
+    let controller = LiveActivityController(client: client)
+    await controller.update(session("s1", pausedMs: 5))
+    let log = await client.log
+    XCTAssertFalse(log.contains("update:\(ended)"))
   }
 
   func testQueueRunsJobsInSubmissionOrderEvenWhenTheySuspend() async {
@@ -152,6 +189,24 @@ final class LiveActivityControllerTests: XCTestCase {
 }
 
 final class ContentStateTests: XCTestCase {
+  func testGoalDateIsStartPlusGoalWhileRunning() {
+    let state = StudyTimerAttributes.ContentState(startDateMs: 1_000_000, pausedAtMs: nil)
+    XCTAssertEqual(state.goalDate(goalSeconds: 1500), Date(timeIntervalSince1970: 1000 + 1500))
+  }
+
+  func testGoalDateAccountsForPausesViaTheShiftedStart() {
+    // Resumed after a 5 min pause: JS shifts startDate forward by 300 s.
+    let resumed = StudyTimerAttributes.ContentState(startDateMs: 1_300_000, pausedAtMs: nil)
+    XCTAssertEqual(resumed.goalDate(goalSeconds: 1500), Date(timeIntervalSince1970: 1300 + 1500))
+  }
+
+  func testNoGoalDateWhilePausedOrWithoutAGoal() {
+    let paused = StudyTimerAttributes.ContentState(startDateMs: 0, pausedAtMs: 60_000)
+    XCTAssertNil(paused.goalDate(goalSeconds: 1500))
+    let running = StudyTimerAttributes.ContentState(startDateMs: 0, pausedAtMs: nil)
+    XCTAssertNil(running.goalDate(goalSeconds: 0))
+  }
+
   func testMillisecondsRoundTripThroughDateAndCodable() throws {
     let state = StudyTimerAttributes.ContentState(startDateMs: 1_761_123_456_789, pausedAtMs: nil)
     let decoded = try JSONDecoder().decode(

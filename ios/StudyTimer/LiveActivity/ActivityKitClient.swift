@@ -21,12 +21,13 @@ struct ActivityKitClient: ActivityClient {
 
   func list() async -> [ActivitySnapshot] {
     StudyActivity.activities
-      .filter { $0.activityState == .active || $0.activityState == .stale }
+      .filter { $0.activityState != .dismissed }
       .map {
         ActivitySnapshot(
           activityId: $0.id,
           sessionId: $0.attributes.sessionId,
-          state: $0.content.state
+          state: $0.content.state,
+          isEnded: $0.activityState == .ended
         )
       }
   }
@@ -36,11 +37,9 @@ struct ActivityKitClient: ActivityClient {
     state: StudyTimerAttributes.ContentState
   ) async throws -> String {
     guard areActivitiesEnabled else { throw LiveActivityError.disabled }
-    // No staleDate: the clock is computed from timestamps on device, so the
-    // content never goes out of date while the app is suspended or killed.
     let activity = try StudyActivity.request(
       attributes: attributes,
-      content: ActivityContent(state: state, staleDate: nil),
+      content: content(state, goalSeconds: attributes.goalSeconds),
       pushType: nil
     )
     return activity.id
@@ -48,12 +47,23 @@ struct ActivityKitClient: ActivityClient {
 
   func update(activityId: String, state: StudyTimerAttributes.ContentState) async {
     guard let activity = find(activityId) else { return }
-    await activity.update(ActivityContent(state: state, staleDate: nil))
+    await activity.update(content(state, goalSeconds: activity.attributes.goalSeconds))
   }
 
   func end(activityId: String) async {
     guard let activity = find(activityId) else { return }
     await activity.end(nil, dismissalPolicy: .immediate)
+  }
+
+  /// The clock itself never goes stale (it's computed from timestamps on
+  /// device). We use `staleDate` only as a timer: at the goal moment iOS
+  /// re-renders the activity with `isStale == true`, which the widget shows
+  /// as "Goal reached".
+  private func content(
+    _ state: StudyTimerAttributes.ContentState,
+    goalSeconds: Int
+  ) -> ActivityContent<StudyTimerAttributes.ContentState> {
+    ActivityContent(state: state, staleDate: state.goalDate(goalSeconds: goalSeconds))
   }
 
   private func find(_ id: String) -> StudyActivity? {

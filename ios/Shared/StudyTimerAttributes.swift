@@ -19,6 +19,15 @@ struct StudyTimerAttributes: ActivityAttributes {
     func elapsed(at now: Date) -> TimeInterval {
       max(0, (pausedAt ?? now).timeIntervalSince(startDate))
     }
+
+    /// When a running session reaches its goal; nil while paused or with no
+    /// goal. Passed to ActivityKit as the content's `staleDate`, so iOS
+    /// re-renders the activity at that moment (see `goalReached` in the
+    /// widget) without the app having to be awake. Not used for staleness.
+    func goalDate(goalSeconds: Int) -> Date? {
+      guard goalSeconds > 0, pausedAt == nil else { return nil }
+      return startDate.addingTimeInterval(TimeInterval(goalSeconds))
+    }
   }
 
   /// Matches the JS session id, so the app can find "its" activity on relaunch.

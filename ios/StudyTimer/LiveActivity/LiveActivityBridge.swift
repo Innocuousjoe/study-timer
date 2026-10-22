@@ -5,6 +5,8 @@ import Foundation
 /// is Objective-C++, which Swift can't adopt, hence the thin shim + this class.
 ///
 /// Timestamps cross the bridge as epoch milliseconds (JS `Date.now()`).
+/// Each method hands its job to the controller synchronously (no `Task`
+/// hop), so jobs reach the serial queue in the order JS called them.
 @objc(LiveActivityBridge)
 final class LiveActivityBridge: NSObject {
   @objc static let shared = LiveActivityBridge()
@@ -24,11 +26,10 @@ final class LiveActivityBridge: NSObject {
     completion: @escaping @Sendable (String?, NSError?) -> Void
   ) {
     let input = Self.input(sessionId, name, goalSeconds, startDateMs, pausedAtMs)
-    Task {
-      do {
-        completion(try await controller.start(input), nil)
-      } catch {
-        completion(nil, error as NSError)
+    controller.start(input) { result in
+      switch result {
+      case .success(let id): completion(id, nil)
+      case .failure(let error): completion(nil, error as NSError)
       }
     }
   }
@@ -42,35 +43,26 @@ final class LiveActivityBridge: NSObject {
     completion: @escaping @Sendable () -> Void
   ) {
     let input = Self.input(sessionId, name, goalSeconds, startDateMs, pausedAtMs)
-    Task {
-      await controller.update(input)
-      completion()
-    }
+    controller.update(input, completion: completion)
   }
 
   @objc func end(activityId: String, completion: @escaping @Sendable () -> Void) {
-    Task {
-      await controller.end(activityId: activityId)
-      completion()
-    }
+    controller.end(activityId: activityId, completion: completion)
   }
 
   @objc func endAll(completion: @escaping @Sendable () -> Void) {
-    Task {
-      await controller.endAll()
-      completion()
-    }
+    controller.endAll(completion: completion)
   }
 
   @objc func list(completion: @escaping @Sendable ([[String: Any]]) -> Void) {
-    Task {
-      let snapshots = await controller.list()
+    controller.list { snapshots in
       completion(snapshots.map { s in
         [
           "activityId": s.activityId,
           "sessionId": s.sessionId,
           "startDate": s.state.startDateMs,
           "pausedAt": s.state.pausedAtMs.map { $0 as Any } ?? NSNull(),
+          "ended": s.isEnded,
         ]
       })
     }
@@ -86,7 +78,8 @@ final class LiveActivityBridge: NSObject {
     SessionInput(
       sessionId: sessionId,
       name: name,
-      goalSeconds: max(0, Int(goalSeconds)),
+      // Clamped: a corrupt value must not trap in Int(_:).
+      goalSeconds: goalSeconds.isFinite ? Int(min(max(goalSeconds, 0), 86_400)) : 0,
       state: .init(startDateMs: startDateMs, pausedAtMs: pausedAtMs?.doubleValue)
     )
   }
