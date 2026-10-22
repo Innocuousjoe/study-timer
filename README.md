@@ -6,6 +6,25 @@ A React Native iOS study timer with a **Live Activity** on the Lock Screen and i
 - The Live Activity appears on start, keeps time while the app is backgrounded or killed, reflects pause and resume, and disappears on stop.
 - The Dynamic Island has compact (name + time), expanded (full name, time, progress ring) and minimal (time) views.
 
+## At a glance
+
+- **Run it:**
+  ```sh
+  scripts/doctor.sh && npm ci && (cd ios && pod install) && scripts/run-ios.sh
+  ```
+  Details are under [Setup and run](#setup-and-run).
+- **The core idea:** the Live Activity is given timestamps, not a ticking counter, so iOS keeps its clock running even when the app is suspended or killed. The app only talks to ActivityKit when you start, pause, resume or stop. See [How it works](#how-it-works).
+- **Where to look:**
+  - `src/timer/` holds the pure timer model, crash-recovery reconcile and the hook.
+  - `src/native/` holds the typed TurboModule spec and its call queue.
+  - `ios/StudyTimer/LiveActivity/` has the Swift ActivityKit controller.
+  - `ios/StudyTimerWidget/` has the Lock Screen and Dynamic Island views.
+- **Tests:** `npm test` runs the Jest tests, which cover the model, reconcile, the bridge queue, the hook and the screen. `npm run test:ios` runs the Swift tests for the controller.
+- **For the discussion:**
+  - [Assumptions](#assumptions) lists where the spec was open.
+  - [What the AI got wrong](#what-the-ai-got-wrong) says how each mistake was caught.
+  - [Future work](#future-work) covers the ideas left out to stay within the spec.
+
 ## Requirements
 
 - macOS with **Xcode 16+**. Built and tested with Xcode 27.
