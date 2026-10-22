@@ -109,6 +109,47 @@ To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also
 - **Clock changes.** All times are epoch milliseconds, so time zone changes have no effect. If the user sets the clock back while paused, resuming keeps the paused time exactly. While running, the elapsed time follows the wall clock.
 - **Platform.** iOS 17.0+ only, tested on the simulator as the spec allows. Running on a device needs a signing team set in Xcode for the StudyTimer and StudyTimerWidget targets.
 
+## What the AI got wrong
+
+I built this with Claude Code. Below is where it was wrong, how each problem was caught, and what changed. Most of these only showed up when the app was used for real (on the simulator, by eye, or from system logs) or when a separate review agent went looking for them. Passing tests didn't reveal any of them.
+
+### Platform assumptions that didn't hold
+- **"The Lock Screen timer always ticks seconds."** When the screen dims, iOS shows a self-updating timer as `7:--`. I spotted it on the simulator. The AI switched the dimmed state to a minute-precision system format ("7 minutes"). That reads "0 minutes" in the first minute, which I flagged. No system format says "under a minute", and the widget can't change its text over time while dimmed, so I chose to keep "0 minutes" as the accurate option.
+- **"iOS 18's timer format can force `HH:MM:SS`."** It can't: even with `showsHours: true` it shows `M:SS` under an hour. The AI found this by formatting sample times in a throwaway Swift script, not by guessing. I'd agreed in advance that `M:SS` was an acceptable fallback.
+- **"A Live Activity can't show 'Goal reached' without the app or a push server."** The AI said so first. I pushed back, and it found the `staleDate` approach: iOS redraws the activity at a set time with no app involvement. I asked that our code call it `goalDate`, so it doesn't overload "stale".
+- **"`staleDate` fires exactly on time."** My first test with a 1-minute goal looked broken: the activity never flipped while I watched. The system log showed iOS won't mark an activity stale until about 2 minutes after its last update. A 3-minute goal flipped exactly on time, so real goals are fine. A second review then caught the same delay hiding "Goal reached" after late updates, such as resuming past the goal. The widget now also checks the current time when it renders.
+- **"Simulator screenshots show the Dynamic Island and Lock Screen."** They don't, from `simctl` or from Xcode's Device Hub. Every Live Activity check needed my eyes, so the AI added debug launch commands to set up each state for me to look at.
+
+### Layout
+- **The expanded island clipped content twice.** First the "d" in "Paused" was cut off in the side region, then the pause glyph in the bottom row. The island's rounded top corners clip anything placed high. I designed the final layout: a glyph centered in the ring and the status word under it, at fixed sizes so the ring never moves. Grayed out while paused was also my call.
+- **"0 of 1 min" under a 40%-full bar.** The label rounded down to whole minutes, so it contradicted the bar. The AI noticed this in a screenshot and proposed "time left". I chose rounding down to the minute, and noted in Assumptions that this should be tested with real users.
+- **Light mode:** after the goal, the app's status still said "Focusing" while the Live Activity said "Goal reached". Fixing that put "Goal reached" on screen twice. The AI caught both in its light-mode screenshots.
+
+### Concurrency and lifecycle bugs (caught by review agents, then pinned with tests)
+- **A Swift `actor` wasn't enough to prevent zombie activities.** Actors are re-entrant across `await`, so the AI used a serial job queue. The first review then found that each bridge call still went through its own `Task`, and Tasks can start out of order. With the per-call Task temporarily put back, a 50-call burst ended with *no* activity right after the user started one. Jobs are now queued synchronously, before each bridge method returns.
+- **Launch race:** an "app became active" event while the saved session was still loading ended the restored session's Live Activity.
+- **Clock set back while paused:** resuming reset the elapsed time to 0. The AI's own test for this checked the wrong moment, so it could never fail.
+- **Activities iOS ended at the 8-hour limit were invisible to the app.** They stayed ticking on the Lock Screen after Stop.
+- **Swipe-away:** the app recreated an activity the user had dismissed. Fixing that caused a regression the second review found: turning Live Activities off and back on mid-session also counted as a dismissal, so the activity never came back.
+- **"End & Start New" didn't end anything.** It only opened the form, despite the button's wording; I chose to make it end the session immediately. The second review then found the summary card showed the time from when the alert opened, not when you confirmed.
+- **Weak tests:** the "save before telling ActivityKit" test only checked the final state, so it would pass in either order. The fake ActivityKit answered instantly, so it hid timing bugs. Each fix now has a test, and for the critical ones the AI removed the fix to confirm the test fails.
+
+### Tooling and setup
+- Xcode 27 rejects the AsyncStorage pod's iOS 13 deployment target; fixed in the Podfile.
+- The template's Xcode group has no folder path, so the AI's first script put the new files in the wrong directory.
+- The generated Swift header needs a React Native header imported first.
+- `simctl openurl` triggers an "Open in Study Timer?" prompt that a script can't tap, so debug commands moved to launch arguments.
+- The generated app icon came out solid black twice. The AI caught this by looking at the PNG before using it.
+- `run-ios.sh` would have refused its own Metro under `/tmp`, because macOS resolves `/tmp` to `/private/tmp`. A separate agent following only the README in a fresh clone caught this. It also found several places where the README made you guess.
+- Splitting the work into commits that each build on their own needed rebuilt lockfiles. `pod install` rewrote two of them in a clean checkout, so the first and second commits were fixed to use the lockfiles they generate themselves.
+
+### Decisions I made along the way
+- **Foundation:** bare React Native with a TurboModule, not Expo.
+- **Progress ring:** measures progress toward an optional goal.
+- **App killed:** the activity persists, and the app reattaches on relaunch.
+- **Goal reached:** the timer doesn't stop at the goal. A goal notification and activity types went under Future work instead, to stay within the spec.
+- **DEBUG panel:** hidden unless requested.
+
 ## Future work
 
 **Goal-reached notification.** The timer deliberately doesn't stop at the goal, since someone may want to keep going. A local notification at the goal moment would still tell them, even if the phone is in a pocket. "Local" means iOS schedules it on the device, with no server.
