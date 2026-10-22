@@ -40,6 +40,11 @@ describe('reconcile', () => {
     expect(reconcile(session, [snap('a')])).toEqual([]);
   });
 
+  it('records an adopted activity as shown if the session did not know yet', () => {
+    const unmarked = { ...session, activityShown: false };
+    expect(reconcile(unmarked, [snap('a')])).toEqual([{ type: 'markShown' }]);
+  });
+
   it('tolerates 1 ms of float round-trip error', () => {
     expect(
       reconcile(session, [snap('a', { startDate: session.startDate + 1 })]),

@@ -15,6 +15,9 @@ export function createFakeNative(
 ) {
   let enabled = opts.enabled ?? true;
   let nextId = 0;
+  // When set, the next startActivity waits until the test calls release().
+  let gate: Promise<void> | null = null;
+  let release: () => void = () => {};
   const activities: ActivitySnapshotSpec[] = [];
   const calls: string[] = opts.log ?? [];
 
@@ -30,6 +33,11 @@ export function createFakeNative(
     areActivitiesEnabled: () => enabled,
     startActivity: async s => {
       calls.push(`start:${s.sessionId}`);
+      if (gate) {
+        const waiting = gate;
+        gate = null;
+        await waiting;
+      }
       activities.splice(0);
       if (!enabled) {
         throw new Error('Live Activities are turned off');
@@ -78,7 +86,16 @@ export function createFakeNative(
     /** The user swiped it off the Lock Screen: gone from ActivityKit's list. */
     swipeAway: (activityId: string) => {
       const i = activities.findIndex(a => a.activityId === activityId);
-      activities.splice(i, 1);
+      if (i >= 0) {
+        activities.splice(i, 1);
+      }
+    },
+    /** Make the next start hang (like a slow ActivityKit request). */
+    holdNextStart: () => {
+      gate = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      return () => release();
     },
     /** iOS ended it at the ~8 h limit; it lingers on screen as ended. */
     endBySystem: (activityId: string) => {

@@ -82,7 +82,15 @@ export function createLiveActivityClient(
     endAll: () => enqueue('endAll', undefined, n => n.endAllActivities()),
     list: () =>
       enqueue<ActivitySnapshot[]>('list', [], async n =>
-        (await n.listActivities()).map(s => ({ ...s })),
+        // Codegen types the arguments, not what a promise resolves with, so
+        // normalize: a missing `ended` must read as live, not undefined.
+        (await n.listActivities()).map(s => ({
+          activityId: s.activityId,
+          sessionId: s.sessionId,
+          startDate: s.startDate,
+          pausedAt: typeof s.pausedAt === 'number' ? s.pausedAt : null,
+          ended: s.ended === true,
+        })),
       ),
     idle: () => enqueue('idle', undefined, async () => undefined),
   };

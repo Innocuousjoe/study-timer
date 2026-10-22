@@ -105,6 +105,25 @@ describe('liveActivity client queue', () => {
     expect(log).toHaveBeenCalledWith('start failed', expect.any(Error));
   });
 
+  it('normalizes snapshots from native (missing ended/pausedAt)', async () => {
+    const fake = createFakeNative();
+    const sloppy = {
+      ...fake.spec,
+      listActivities: async () =>
+        [{ activityId: 'a', sessionId: 's', startDate: 1 }] as never,
+    } as Spec;
+    const client = createLiveActivityClient(sloppy);
+    await expect(client.list()).resolves.toEqual([
+      {
+        activityId: 'a',
+        sessionId: 's',
+        startDate: 1,
+        pausedAt: null,
+        ended: false,
+      },
+    ]);
+  });
+
   it('is a safe no-op when the native module is missing', async () => {
     const client = createLiveActivityClient(null);
     expect(client.isAvailable()).toBe(false);

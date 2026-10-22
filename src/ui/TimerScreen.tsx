@@ -18,7 +18,12 @@ import {
   type DebugCommand,
 } from '../debug/debugLinks';
 import type { LiveActivityClient } from '../native/liveActivity';
-import { formatGoal, formatHMS, formatTimeLeft } from '../timer/timerModel';
+import {
+  elapsedSeconds,
+  formatGoal,
+  formatHMS,
+  formatTimeLeft,
+} from '../timer/timerModel';
 import { useStudyTimer, type KeyValueStore } from '../timer/useStudyTimer';
 import { NewSessionForm } from './NewSessionForm';
 import { useTheme, type Theme } from './theme';
@@ -48,7 +53,12 @@ export function TimerScreen({
 
   const stop = () => {
     if (session) {
-      setCompleted({ name: session.name, elapsed: timer.elapsed });
+      // Computed now, not from this render: when called from the "End & Start
+      // New" alert, the render is from when the alert opened.
+      setCompleted({
+        name: session.name,
+        elapsed: elapsedSeconds(session, Date.now()),
+      });
     }
     timer.stop();
   };
@@ -110,7 +120,7 @@ export function TimerScreen({
         <Text
           testID="session-name"
           style={[styles.name, { color: t.text }]}
-          numberOfLines={2}
+          numberOfLines={3}
         >
           {session.name}
         </Text>
@@ -152,7 +162,7 @@ export function TimerScreen({
                   styles.fill,
                   {
                     width: `${timer.progress * 100}%`,
-                    // Grayed out while paused, matching the Live Activity ring.
+                    // Grayed out while paused, matching the Dynamic Island ring.
                     backgroundColor: timer.paused
                       ? t.muted
                       : timer.goalReached
@@ -165,7 +175,10 @@ export function TimerScreen({
             <Text
               style={[
                 styles.goalText,
-                { color: timer.goalReached ? t.success : t.muted },
+                {
+                  color:
+                    timer.goalReached && !timer.paused ? t.success : t.muted,
+                },
               ]}
             >
               {timer.goalReached

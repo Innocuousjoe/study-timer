@@ -80,45 +80,59 @@ export function useStudyTimer({
     [storage],
   );
 
-  /** Start an activity; once it exists, remember that for this session. */
-  const startActivity = useCallback(
-    async (session: Session) => {
-      const activityId = await activities.start(session);
-      if (!activityId) {
-        return;
-      }
+  /** Record whether this session currently has a Live Activity on screen. */
+  const setActivityShown = useCallback(
+    async (id: string, shown: boolean) => {
       const prev = stateRef.current;
-      const next = timerReducer(prev, {
-        type: 'activityShown',
-        id: session.id,
-      });
+      const next = timerReducer(prev, { type: 'activityShown', id, shown });
       if (next !== prev) {
         stateRef.current = next;
         setState(next);
         await persist(next.session);
       }
     },
-    [activities, persist],
+    [persist],
+  );
+
+  /** Start an activity; once it exists, remember that for this session. */
+  const startActivity = useCallback(
+    async (session: Session) => {
+      if (await activities.start(session)) {
+        await setActivityShown(session.id, true);
+      }
+    },
+    [activities, setActivityShown],
   );
 
   const reconcileActivities = useCallback(
     () =>
       serially(async () => {
         const enabled = activities.areEnabled();
-        const session = stateRef.current.session;
+        let session = stateRef.current.session;
+        if (session?.activityShown && !enabled) {
+          // Live Activities were turned off mid-session and iOS removed the
+          // activity. That's not a swipe-away, so bring it back once they're
+          // turned on again.
+          await setActivityShown(session.id, false);
+          session = stateRef.current.session;
+        }
         const actions = reconcile(session, await activities.list());
         for (const action of actions) {
           if (action.type === 'end') {
             activities.end(action.activityId);
           } else if (action.type === 'update') {
             activities.update(action.session);
+          } else if (action.type === 'markShown') {
+            if (session) {
+              await setActivityShown(session.id, true);
+            }
           } else if (enabled) {
             await startActivity(action.session);
           }
         }
         await activities.idle();
       }),
-    [activities, serially, startActivity],
+    [activities, serially, setActivityShown, startActivity],
   );
 
   // Hydrate from storage once, then repair any Live Activity drift.
@@ -209,7 +223,10 @@ export function useStudyTimer({
       const before = prev.session;
       const after = next.session;
       serially(async () => {
-        await persist(after);
+        // Save the latest state, not `after`: an earlier step may have
+        // updated it since (e.g. marking the activity shown), and writing
+        // the older copy would lose that.
+        await persist(stateRef.current.session);
         if (!after) {
           activities.endAll();
         } else if (after.id !== before?.id) {

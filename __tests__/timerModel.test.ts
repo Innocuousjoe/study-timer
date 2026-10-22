@@ -136,14 +136,22 @@ describe('timerReducer + elapsedSeconds', () => {
   it('records that an activity was shown, only for the current session', () => {
     const started = run(start());
     expect(started.session!.activityShown).toBe(false);
-    const shown = timerReducer(started, { type: 'activityShown', id: 's1' });
+    const shown = timerReducer(started, {
+      type: 'activityShown',
+      id: 's1',
+      shown: true,
+    });
     expect(shown.session!.activityShown).toBe(true);
-    expect(timerReducer(started, { type: 'activityShown', id: 'other' })).toBe(
-      started,
-    );
-    expect(timerReducer(shown, { type: 'activityShown', id: 's1' })).toBe(
-      shown,
-    );
+    expect(
+      timerReducer(started, {
+        type: 'activityShown',
+        id: 'other',
+        shown: true,
+      }),
+    ).toBe(started);
+    expect(
+      timerReducer(shown, { type: 'activityShown', id: 's1', shown: true }),
+    ).toBe(shown);
   });
 });
 

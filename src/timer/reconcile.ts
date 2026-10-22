@@ -16,7 +16,11 @@ export type ActivitySnapshot = {
 export type ReconcileAction =
   | { type: 'end'; activityId: string }
   | { type: 'create'; session: Session }
-  | { type: 'update'; activityId: string; session: Session };
+  | { type: 'update'; activityId: string; session: Session }
+  /** A live activity exists for a session not yet marked as shown (e.g. the
+   * app died between ActivityKit's start and saving that); record it so a
+   * later swipe-away is respected. */
+  | { type: 'markShown' };
 
 /**
  * Bring the Live Activities on screen in line with the persisted session,
@@ -53,6 +57,9 @@ export function reconcile(
     .map(s => ({ type: 'end', activityId: s.activityId }));
 
   if (keep) {
+    if (!session.activityShown) {
+      actions.push({ type: 'markShown' });
+    }
     if (
       !sameInstant(keep.startDate, session.startDate) ||
       !sameInstant(keep.pausedAt, session.pausedAt)

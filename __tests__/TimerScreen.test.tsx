@@ -137,9 +137,11 @@ describe('TimerScreen (as a user)', () => {
     const buttons = alert.mock.calls[0][2]!;
     expect(buttons.map(b => b.text)).toEqual(['Keep Going', 'End & Start New']);
 
+    // The user hesitates on the alert; the summary must include that time.
+    await advance(30_000);
     await act(async () => buttons[1].onPress!());
     expect(screen.getByText('Session complete')).toBeOnTheScreen();
-    expect(screen.getByText('00:00:05')).toBeOnTheScreen();
+    expect(screen.getByText('00:00:35')).toBeOnTheScreen();
     expect(screen.getByTestId('start-button')).toBeOnTheScreen();
     expect(fake.activities).toHaveLength(0);
   });

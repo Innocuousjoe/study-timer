@@ -49,7 +49,7 @@ export type TimerAction =
   | { type: 'resume'; now: number }
   | { type: 'stop' }
   | { type: 'restore'; session: Session | null }
-  | { type: 'activityShown'; id: string };
+  | { type: 'activityShown'; id: string; shown: boolean };
 
 export const initialTimerState: TimerState = { session: null };
 
@@ -96,10 +96,14 @@ export function timerReducer(
     case 'restore':
       return { session: action.session };
     case 'activityShown':
-      if (!session || session.id !== action.id || session.activityShown) {
+      if (
+        !session ||
+        session.id !== action.id ||
+        session.activityShown === action.shown
+      ) {
         return state;
       }
-      return { session: { ...session, activityShown: true } };
+      return { session: { ...session, activityShown: action.shown } };
   }
 }
 

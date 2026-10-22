@@ -208,6 +208,40 @@ describe('useStudyTimer', () => {
     expect(fake.calls).toEqual(['start:s1', 'start:s2']);
   });
 
+  it('brings the activity back after Live Activities are turned off and on mid-session', async () => {
+    const { result, fake } = await setup();
+    await act(async () => result.current.start('Chapter 5 Review', 1500));
+    await settle(result);
+
+    // Turned off in Settings: iOS removes the activity.
+    fake.setEnabled(false);
+    fake.swipeAway('a1');
+    await setAppState('active');
+    await settle(result);
+    expect(result.current.liveActivityStatus).toBe('off');
+
+    // Turned back on: not a swipe-away, so it comes back.
+    fake.setEnabled(true);
+    await setAppState('active');
+    await settle(result);
+    expect(fake.calls).toEqual(['start:s1', 'start:s1']);
+    expect(fake.activities).toHaveLength(1);
+  });
+
+  it('keeps "activity shown" when the user pauses during a slow start', async () => {
+    const { result, fake, storage } = await setup();
+    const release = fake.holdNextStart();
+    await act(async () => result.current.start('Chapter 5 Review', 1500));
+    await act(async () => result.current.pause()); // before ActivityKit answers
+    await act(async () => release());
+    await settle(result);
+
+    const saved = JSON.parse(storage.data.get(SESSION_STORAGE_KEY)!);
+    expect(saved).toMatchObject({ activityShown: true });
+    expect(saved.pausedAt).not.toBeNull();
+    expect(fake.calls).toEqual(['start:s1', 'update:s1:paused']);
+  });
+
   it('replaces an activity iOS ended at its time limit', async () => {
     const { result, fake } = await setup();
     await act(async () => result.current.start('Chapter 5 Review', 1500));
@@ -258,6 +292,28 @@ describe('useStudyTimer', () => {
     it('does not recreate an activity the user swiped away', async () => {
       const { fake } = await setup({ stored: running });
       expect(fake.calls).toEqual([]);
+    });
+
+    it('marks an adopted activity as shown, so a later swipe-away is respected', async () => {
+      // Killed between ActivityKit's start and saving activityShown.
+      const { result, fake, storage } = await setup({
+        stored: { ...running, activityShown: false },
+        seed: f =>
+          f.seed({
+            sessionId: 'old',
+            startDate: running.startDate,
+            pausedAt: null,
+          }),
+      });
+      expect(fake.calls).toEqual([]);
+      expect(JSON.parse(storage.data.get(SESSION_STORAGE_KEY)!)).toMatchObject({
+        activityShown: true,
+      });
+
+      fake.swipeAway('a1');
+      await setAppState('active');
+      await settle(result);
+      expect(fake.calls).toEqual([]); // not recreated
     });
 
     it('creates the activity if the session never got one', async () => {
