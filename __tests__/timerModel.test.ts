@@ -264,13 +264,3 @@ describe('persistence', () => {
     expect(deserializeSession(raw)).toBeNull();
   });
 });
-
-describe('brand gradient mix', () => {
-  // Imported here to keep the pure helper tested alongside other formatters.
-  const { mix } = require('../src/ui/brand');
-  it('interpolates between the two logo colors', () => {
-    expect(mix('#F5277F', '#EA7D35', 0)).toBe('#F5277F');
-    expect(mix('#F5277F', '#EA7D35', 1)).toBe('#EA7D35');
-    expect(mix('#000000', '#FFFFFF', 0.5)).toBe('#808080');
-  });
-});

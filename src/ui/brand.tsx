@@ -60,56 +60,24 @@ export function LedgeButton({
   );
 }
 
-/** The BoldVoice logo gradient as a thin bar, built from slices (no gradient library). */
-export function BrandGradientBar({
-  width = 64,
-  height = 4,
-}: {
-  width?: number;
-  height?: number;
-}) {
-  const slices = 24;
+/**
+ * The BoldVoice logo gradient as a thin bar, using React Native's built-in
+ * CSS gradients. It stretches to its container's width; put it in a container
+ * sized to the text it underlines.
+ */
+export function BrandGradientBar({ height = 4 }: { height?: number }) {
   return (
     <View
-      style={[styles.bar, { width, height, borderRadius: height / 2 }]}
+      style={[styles.bar, { height, borderRadius: height / 2 }]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-    >
-      {Array.from({ length: slices }, (_, i) => (
-        <View
-          key={i}
-          style={[
-            styles.slice,
-            {
-              backgroundColor: mix(
-                brand.gradientFrom,
-                brand.gradientTo,
-                i / (slices - 1),
-              ),
-            },
-          ]}
-        />
-      ))}
-    </View>
+    />
   );
 }
 
 /** Left accent bar like BoldVoice's blog blockquotes. */
 export function BrandAccentEdge(): ReactNode {
   return <View style={styles.edge} />;
-}
-
-export function mix(from: string, to: string, t: number): string {
-  const channel = (hex: string, i: number) =>
-    parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
-  return `#${[0, 1, 2]
-    .map(i => {
-      const x = channel(from, i);
-      const v = Math.round(x + (channel(to, i) - x) * t);
-      return v.toString(16).padStart(2, '0');
-    })
-    .join('')
-    .toUpperCase()}`;
 }
 
 const styles = StyleSheet.create({
@@ -130,8 +98,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   label: { fontSize: 17, fontWeight: '700' },
-  bar: { flexDirection: 'row', overflow: 'hidden' },
-  slice: { flex: 1 },
+  bar: {
+    alignSelf: 'stretch',
+    backgroundImage: `linear-gradient(90deg, ${brand.gradientFrom}, ${brand.gradientTo})`,
+  },
   edge: {
     position: 'absolute',
     left: 0,

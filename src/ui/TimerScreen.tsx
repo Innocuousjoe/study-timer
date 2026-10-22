@@ -443,7 +443,8 @@ function spokenDuration(total: number): string {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { paddingHorizontal: 24, gap: 16, flexGrow: 1 },
-  titleBlock: { gap: 8, marginBottom: 8 },
+  // Shrinks to the title's width, so the gradient bar underlines exactly the title.
+  titleBlock: { alignSelf: 'flex-start', gap: 8, marginBottom: 8 },
   title: { fontSize: 32, fontWeight: '800' },
   loading: { marginTop: 80 },
   active: { alignItems: 'center', gap: 12, marginTop: 24 },

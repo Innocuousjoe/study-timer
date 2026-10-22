@@ -147,6 +147,7 @@ I built this with Claude Code. Below is where it was wrong, how each problem was
 - The template's Xcode group has no folder path, so the AI's first script put the new files in the wrong directory.
 - The generated Swift header needs a React Native header imported first.
 - `simctl openurl` triggers an "Open in Study Timer?" prompt that a script can't tap, so debug commands moved to launch arguments.
+- **"React Native has no built-in gradient."** The AI first built the title's gradient bar from 24 solid-color slices. When I questioned it, it checked the installed React Native and found that 0.88 supports CSS `linear-gradient(...)` through the `backgroundImage` style. The bar is now a single view, stretched to the title's width.
 - The generated app icon came out solid black twice. The AI caught this by looking at the PNG before using it.
 - `run-ios.sh` would have refused its own Metro under `/tmp`, because macOS resolves `/tmp` to `/private/tmp`. A separate agent following only the README in a fresh clone caught this. It also found several places where the README made you guess.
 - Splitting the work into commits that each build on their own needed rebuilt lockfiles. `pod install` rewrote two of them in a clean checkout, so the first and second commits were fixed to use the lockfiles they generate themselves.
