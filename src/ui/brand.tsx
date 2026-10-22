@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { brand, useTheme } from './theme';
 
@@ -75,11 +74,6 @@ export function BrandGradientBar({ height = 4 }: { height?: number }) {
   );
 }
 
-/** Left accent bar like BoldVoice's blog blockquotes. */
-export function BrandAccentEdge(): ReactNode {
-  return <View style={styles.edge} />;
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   wrap: { paddingBottom: LEDGE },
@@ -101,13 +95,5 @@ const styles = StyleSheet.create({
   bar: {
     alignSelf: 'stretch',
     backgroundImage: `linear-gradient(90deg, ${brand.gradientFrom}, ${brand.gradientTo})`,
-  },
-  edge: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-    backgroundColor: brand.orange,
   },
 });

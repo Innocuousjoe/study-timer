@@ -68,7 +68,6 @@ describe('TimerScreen (as a user)', () => {
 
     await fireEvent.press(screen.getByTestId('stop-button'));
     await act(async () => {});
-    expect(screen.getByText('Session complete')).toBeOnTheScreen();
     expect(screen.getByTestId('start-button')).toBeOnTheScreen();
     expect(fake.activities).toHaveLength(0);
   });
@@ -92,25 +91,6 @@ describe('TimerScreen (as a user)', () => {
 
     await fireEvent.press(screen.getByText('Resume'));
     expect(fillColor()).toBe(running);
-  });
-
-  it('summary card marks a reached goal with a star', async () => {
-    await setup();
-    await fireEvent.press(screen.getByTestId('start-button'));
-    await advance(25 * 60 * 1000 + 10);
-    await fireEvent.press(screen.getByTestId('stop-button'));
-    await act(async () => {});
-    expect(screen.getByLabelText('Goal reached')).toBeOnTheScreen();
-  });
-
-  it('summary card has no star when the goal was not reached', async () => {
-    await setup();
-    await fireEvent.press(screen.getByTestId('start-button'));
-    await advance(60_000);
-    await fireEvent.press(screen.getByTestId('stop-button'));
-    await act(async () => {});
-    expect(screen.getByTestId('completed-card')).toBeOnTheScreen();
-    expect(screen.queryByLabelText('Goal reached')).toBeNull();
   });
 
   it('uses a default name when the field is left blank', async () => {
@@ -142,7 +122,7 @@ describe('TimerScreen (as a user)', () => {
     expect(screen.getByText(/Live Activities are off/)).toBeOnTheScreen();
   });
 
-  it('"End & Start New" ends the session immediately and shows its summary', async () => {
+  it('"End & Start New" ends the session immediately and returns to the form', async () => {
     const { fake } = await setup();
     await fireEvent.changeText(
       screen.getByTestId('session-name-input'),
@@ -156,11 +136,8 @@ describe('TimerScreen (as a user)', () => {
     const buttons = alert.mock.calls[0][2]!;
     expect(buttons.map(b => b.text)).toEqual(['Keep Going', 'End & Start New']);
 
-    // The user hesitates on the alert; the summary must include that time.
-    await advance(30_000);
     await act(async () => buttons[1].onPress!());
-    expect(screen.getByText('Session complete')).toBeOnTheScreen();
-    expect(screen.getByText('00:00:35')).toBeOnTheScreen();
+    expect(screen.queryByTestId('stop-button')).toBeNull();
     expect(screen.getByTestId('start-button')).toBeOnTheScreen();
     expect(fake.activities).toHaveLength(0);
   });

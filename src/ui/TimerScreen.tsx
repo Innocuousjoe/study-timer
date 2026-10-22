@@ -18,16 +18,11 @@ import {
   type DebugCommand,
 } from '../debug/debugLinks';
 import type { LiveActivityClient } from '../native/liveActivity';
-import {
-  elapsedSeconds,
-  formatGoal,
-  formatHMS,
-  formatTimeLeft,
-} from '../timer/timerModel';
+import { formatGoal, formatHMS, formatTimeLeft } from '../timer/timerModel';
 import { useStudyTimer, type KeyValueStore } from '../timer/useStudyTimer';
 import { NewSessionForm } from './NewSessionForm';
-import { BrandAccentEdge, BrandGradientBar, LedgeButton } from './brand';
-import { brand, useTheme, type Theme } from './theme';
+import { BrandGradientBar, LedgeButton } from './brand';
+import { useTheme, type Theme } from './theme';
 
 type Props = {
   storage: KeyValueStore;
@@ -35,8 +30,6 @@ type Props = {
   /** DEBUG panel; defaults to the -debugPanel / -debugCommand launch args. */
   showDebug?: boolean;
 };
-
-type Completed = { name: string; elapsed: number; goalReached: boolean };
 
 export function TimerScreen({
   storage,
@@ -46,30 +39,13 @@ export function TimerScreen({
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const timer = useStudyTimer({ storage, activities });
-  const [completed, setCompleted] = useState<Completed | null>(null);
   const [stressResult, setStressResult] = useState<string | null>(null);
   const activityCount = useActivityCount(timer, activities);
 
   const { session } = timer;
 
-  const stop = () => {
-    if (session) {
-      // Computed now, not from this render: when called from the "End & Start
-      // New" alert, the render is from when the alert opened.
-      const elapsed = elapsedSeconds(session, Date.now());
-      setCompleted({
-        name: session.name,
-        elapsed,
-        goalReached: session.goalSeconds > 0 && elapsed >= session.goalSeconds,
-      });
-    }
-    timer.stop();
-  };
-
-  const startNew = (name: string, goal: number) => {
-    setCompleted(null);
-    timer.start(name, goal);
-  };
+  const stop = timer.stop;
+  const startNew = timer.start;
 
   /** DEBUG: 20 rapid start/stop cycles, then count what ActivityKit has left. */
   const runStress = async () => {
@@ -78,7 +54,6 @@ export function TimerScreen({
       timer.start(`Stress ${i + 1}`, 60);
       timer.stop();
     }
-    setCompleted(null);
     await timer.settled();
     const left = await activities.list();
     setStressResult(`20 start/stop cycles → ${left.length} activities left`);
@@ -99,8 +74,8 @@ export function TimerScreen({
   };
   useDebugLinks(timer.hydrated, handleDebug);
 
-  // Ends the current session right away (with its completed card), as the
-  // button says; the new-session form then shows because nothing is running.
+  // Ends the current session right away, as the button says; the
+  // new-session form then shows because nothing is running.
   const askStartNew = () =>
     Alert.alert('Start a new session?', `“${session?.name}” will end.`, [
       { text: 'Keep Going', style: 'cancel' },
@@ -111,12 +86,7 @@ export function TimerScreen({
   if (!timer.hydrated) {
     body = <ActivityIndicator style={styles.loading} color={t.muted} />;
   } else if (!session) {
-    body = (
-      <>
-        {completed && <CompletedCard t={t} completed={completed} />}
-        <NewSessionForm onStart={startNew} />
-      </>
-    );
+    body = <NewSessionForm onStart={startNew} />;
   } else {
     body = (
       <View style={styles.active}>
@@ -290,39 +260,6 @@ function Button({
   );
 }
 
-function CompletedCard({ t, completed }: { t: Theme; completed: Completed }) {
-  return (
-    <View
-      testID="completed-card"
-      style={[
-        styles.card,
-        { backgroundColor: t.surface, borderColor: t.border },
-      ]}
-    >
-      <BrandAccentEdge />
-      <Text style={[styles.cardLabel, { color: t.muted }]}>
-        Session complete
-      </Text>
-      <Text style={[styles.cardName, { color: t.text }]} numberOfLines={2}>
-        {completed.name}
-      </Text>
-      <View style={styles.cardRow}>
-        <Text style={[styles.cardTime, { color: t.text }]}>
-          {formatHMS(completed.elapsed)}
-        </Text>
-        {completed.goalReached && (
-          <Text
-            style={[styles.cardGoal, { color: t.text }]}
-            accessibilityLabel="Goal reached"
-          >
-            <Text style={{ color: brand.gold }}>★</Text> Goal reached
-          </Text>
-        )}
-      </View>
-    </View>
-  );
-}
-
 function LiveActivitiesOffBanner({ t }: { t: Theme }) {
   return (
     <Pressable
@@ -481,28 +418,6 @@ const styles = StyleSheet.create({
     marginVertical: 16,
   },
   link: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
-  card: {
-    padding: 16,
-    paddingLeft: 19, // clears the 3px accent edge
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 4,
-  },
-  cardLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  cardName: { fontSize: 18, fontWeight: '600' },
-  cardTime: { fontSize: 28, fontWeight: '300', fontVariant: ['tabular-nums'] },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-  },
-  cardGoal: { fontSize: 15, fontWeight: '600' },
   banner: { padding: 14, borderRadius: 12 },
   bannerText: { fontSize: 14, lineHeight: 20 },
   debug: {

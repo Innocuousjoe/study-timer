@@ -8,10 +8,6 @@ export const brand = {
   /** Logo gradient, pink to orange. */
   gradientFrom: '#F5277F',
   gradientTo: '#EA7D35',
-  /** Their `--secondary`: buttons, blockquote bars, drop caps. */
-  orange: '#D45530',
-  /** Review stars. Decorative only; too light for text on white. */
-  gold: '#FFB800',
 };
 
 const light = {

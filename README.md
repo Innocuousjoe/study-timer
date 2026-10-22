@@ -88,7 +88,6 @@ The app's own colors are a purple accent and a green for goals. It borrows a few
 
 - **App icon.** The pink-to-orange logo gradient, `#F5277F` → `#EA7D35`. A thin bar of the same gradient sits under the title.
 - **Buttons.** Pill-shaped, with the solid offset "ledge" they press down into, like BoldVoice's `.button`.
-- **Session summary card.** The 3px burnt-orange (`#D45530`) left edge from their blog blockquotes, plus a gold (`#FFB800`) star when the goal was reached.
 
 ## Debug automation
 
@@ -110,7 +109,7 @@ To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also
 - **Dimmed Lock Screen.** In Always-On / reduced-luminance mode, iOS stops ticking seconds and would show `7:--`. The Lock Screen switches to a minute-precision system format ("7 minutes") in that state. During a session's first minute this reads "0 minutes". No system format says "under a minute", and the widget can't switch text over time while the screen is dimmed, so "0 minutes" is the accurate option.
 - **"Time left" rounds down.** The label under the in-app progress bar shows time left rounded down to the minute ("1 hour, 2 min left" with 1 h 2 m 32 s remaining, and "Less than 1 min left" under a minute). It therefore lags the `HH:MM:SS` clock by up to 59 seconds. Rounding down avoids promising time that isn't there, and other apps seem to do the same. Even so, we'd test it with real users to see whether the mismatch is noticeable or bothersome.
 - **App killed.** The Live Activity persists with the correct time, since it ticks itself. The spec allows either ending it or keeping it. On relaunch the app restores the session and reattaches.
-- **One session at a time.** "Start New Session" during a session asks for confirmation. "End & Start New" then ends the current session right away, showing its summary, and opens the new-session form.
+- **One session at a time.** "Start New Session" during a session asks for confirmation. "End & Start New" then ends the current session right away and opens the new-session form.
 - **Swiping the Live Activity away.** If the user dismisses it from the Lock Screen, it stays dismissed for the rest of that session. The next session shows a new one. If Live Activities were off when the session started and are turned on later, the activity appears the next time the app comes to the foreground.
 - **Activity lifetime.** iOS ends a Live Activity after about 8 hours, but it can linger on the Lock Screen for hours. The next time the app comes to the foreground, it dismisses the lingering one and starts a fresh one. Stop always clears both.
 - **Goal reached on the Live Activity.** It flips to "Goal reached" at the goal time while running, through `staleDate` (see How it works). iOS won't mark an activity stale sooner than about 2 minutes after its last update. I saw this in the system log: a 1-minute goal flipped at 2 minutes, and a 3-minute goal flipped on time. So the 25 / 50 / 90 min goals flip on time. Resuming with less than 2 minutes to the goal makes the flip land up to about 2 minutes late. When an update arrives after the goal has already passed (resuming after the goal, a replacement activity), the widget also compares against the current time, so it shows "Goal reached" straight away. A paused activity always reads "Paused", in gray, and the app does the same.
@@ -139,7 +138,7 @@ I built this with Claude Code. Below is where it was wrong, how each problem was
 - **Clock set back while paused:** resuming reset the elapsed time to 0. The AI's own test for this checked the wrong moment, so it could never fail.
 - **Activities iOS ended at the 8-hour limit were invisible to the app.** They stayed ticking on the Lock Screen after Stop.
 - **Swipe-away:** the app recreated an activity the user had dismissed. Fixing that caused a regression the second review found: turning Live Activities off and back on mid-session also counted as a dismissal, so the activity never came back.
-- **"End & Start New" didn't end anything.** It only opened the form, despite the button's wording; I chose to make it end the session immediately. The second review then found the summary card showed the time from when the alert opened, not when you confirmed.
+- **"End & Start New" didn't end anything.** It only opened the form, despite the button's wording; I chose to make it end the session immediately.
 - **Weak tests:** the "save before telling ActivityKit" test only checked the final state, so it would pass in either order. The fake ActivityKit answered instantly, so it hid timing bugs. Each fix now has a test, and for the critical ones the AI removed the fix to confirm the test fails.
 
 ### Tooling and setup
@@ -185,12 +184,12 @@ I built this with Claude Code. Below is where it was wrong, how each problem was
 - **Plumbing.** The activity would be one more field on the session and one more fixed attribute on the Live Activity, like the name. A blank session name would default to the activity.
 
 
-**Session history.** Today a finished session shows a "Session complete" card, which disappears with the next session. A history screen would keep every finished session:
+**Session history.** Today a finished session leaves no record; Stop returns to the new-session form. A history screen would keep every finished session:
 
 - **List.** Previous sessions, newest first, grouped by day. Each row shows the name, focused time, goal (and whether it was reached), the activity type if that feature exists, and when it started. Daily and weekly totals go at the top.
-- **Notes.** Attach a note or comment to a session, e.g. "finished problems 1–12; struggled with stereochemistry". You can add it straight from the "Session complete" card, or later from the session's detail view. You can also edit or delete a session.
+- **Notes.** Attach a note or comment to a session, e.g. "finished problems 1–12; struggled with stereochemistry". You can add it from a short summary shown right after Stop, or later from the session's detail view. You can also edit or delete a session.
 - **Data model.** On Stop or "End & Start New", append a `CompletedSession` to storage. Its fields: id, name, `startedAt`, `endedAt`, focused seconds, total paused seconds, goal seconds, goal reached, activity type, note.
   - The live session stores an *effective* `startDate`, shifted forward by time spent paused, so the real start time would need its own `startedAt` field. Paused time would be tracked as pauses happen.
-  - The completed card already computes the focused time at the moment you stop, so that's the natural place to write the record.
+  - Stop is the natural place to write the record, computing focused time at that moment.
 - **Storage.** AsyncStorage is fine for a few hundred sessions. Beyond that, or for totals and search, SQLite is the better fit. Records stay on the device, with optional iCloud sync later.
 - **Natural follow-ons.** Streaks, a per-activity breakdown, and starting a new session from a past one ("repeat Chapter 5 Review, 50 min").
