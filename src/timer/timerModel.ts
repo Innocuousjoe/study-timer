@@ -139,8 +139,11 @@ export function formatHMS(totalSeconds: number): string {
     .join(':');
 }
 
-/** "25 min", "1 h 30 min". */
+/** "25 min", "1 h 30 min"; goals under a minute (debug links only) as "30 s". */
 export function formatGoal(goalSeconds: number): string {
+  if (goalSeconds < 60) {
+    return `${Math.max(0, Math.floor(goalSeconds))} s`;
+  }
   const totalMinutes = Math.round(goalSeconds / 60);
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;

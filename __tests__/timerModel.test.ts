@@ -190,6 +190,7 @@ describe('goal progress', () => {
     expect(formatGoal(25 * 60)).toBe('25 min');
     expect(formatGoal(90 * 60)).toBe('1 h 30 min');
     expect(formatGoal(120 * 60)).toBe('2 h');
+    expect(formatGoal(30)).toBe('30 s');
   });
 });
 

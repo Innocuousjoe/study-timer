@@ -107,7 +107,8 @@ describe('TimerScreen (as a user)', () => {
     await fireEvent.press(screen.getByText('25 min'));
     await fireEvent.press(screen.getByTestId('start-button'));
     await advance(25 * 60 * 1000 + 10);
-    expect(screen.getByText('Goal reached · 25 min')).toBeOnTheScreen();
+    expect(screen.getByText('25 min goal')).toBeOnTheScreen();
+    expect(screen.getByTestId('status')).toHaveTextContent('Goal reached');
   });
 
   it('hides the progress bar for "No goal"', async () => {

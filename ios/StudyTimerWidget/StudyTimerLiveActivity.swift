@@ -307,6 +307,7 @@ func formatClock(_ seconds: TimeInterval) -> String {
 }
 
 func formatGoal(_ goalSeconds: Int) -> String {
+  if goalSeconds < 60 { return "\(max(0, goalSeconds)) s" }  // debug links only
   let minutes = goalSeconds / 60
   let h = minutes / 60, m = minutes % 60
   if h == 0 { return "\(m) min" }

@@ -123,9 +123,24 @@ export function TimerScreen({
           {formatHMS(timer.elapsed)}
         </Text>
         <Text
-          style={[styles.status, { color: timer.paused ? t.muted : t.accent }]}
+          testID="status"
+          style={[
+            styles.status,
+            {
+              color: timer.paused
+                ? t.muted
+                : timer.goalReached
+                ? t.success
+                : t.accent,
+            },
+          ]}
         >
-          {timer.paused ? 'Paused' : 'Focusing'}
+          {/* Same words as the Live Activity's status. */}
+          {timer.paused
+            ? 'Paused'
+            : timer.goalReached
+            ? 'Goal reached'
+            : 'Focusing'}
         </Text>
 
         {session.goalSeconds > 0 && (
@@ -154,7 +169,7 @@ export function TimerScreen({
               ]}
             >
               {timer.goalReached
-                ? `Goal reached · ${formatGoal(session.goalSeconds)}`
+                ? `${formatGoal(session.goalSeconds)} goal`
                 : formatTimeLeft(session.goalSeconds - timer.elapsed)}
             </Text>
           </View>
