@@ -71,8 +71,9 @@ TimerScreen ── useStudyTimer ── liveActivity ──▶ RCTLiveActivity.m
 - **Timestamps, not ticks.** A session stores an effective `startDate` (the real start shifted forward by time spent paused) and `pausedAt`. The app derives the display from these, and the Live Activity receives the same two values.
 - **The Live Activity ticks itself.** The widget uses `Text(timerInterval:)` and `ProgressView(timerInterval:)`, which iOS animates with no updates from the app. The app sends an ActivityKit update only on start, pause, resume and stop. So the Lock Screen stays accurate while the app is suspended or killed, and the app never runs into ActivityKit's update throttling.
 - **Typed bridge.** `src/native/NativeLiveActivity.ts` is the TurboModule spec. Codegen generates the Objective-C++ protocol, and `RCTLiveActivity.mm` (a thin shim, needed because Swift can't adopt C++-typed protocols) forwards to Swift. If the spec and the native side disagree, the build fails.
-- **No zombie activities.** Calls are serialized in JS (a promise queue) and in Swift (a single-consumer job queue; a plain actor isn't enough because actors are re-entrant across `await`). `start` always ends existing activities first.
-- **Crash recovery.** Every change is written to AsyncStorage before ActivityKit is told. On launch and on every return to the foreground, `reconcile()` compares the saved session with the live activities: it ends strays, recreates a missing activity, and fixes one whose state drifted.
+- **No zombie activities.** Calls are serialized in JS (a promise queue) and in Swift (a single-consumer job queue that each bridge method submits to synchronously, before returning). A plain actor isn't enough, because actors are re-entrant across `await`. Neither is a `Task` per call, since Tasks can start out of order. `start` always ends existing activities first, including ones iOS has already ended.
+- **Crash recovery.** Every change is written to AsyncStorage before ActivityKit is told. On launch and on every return to the foreground, `reconcile()` compares the saved session with the activities on screen. It ends strays, fixes an activity whose state drifted, and replaces one iOS ended at its time limit. If saving fails, ActivityKit is still told.
+- **Goal reached without the app.** While running, each update's `staleDate` is set to the moment the goal is reached (`ContentState.goalDate`). iOS re-renders the activity at that moment, and the widget turns it green with "Goal reached". Staleness isn't used for anything else.
 - **One source for the activity's data.** `ios/Shared/StudyTimerAttributes.swift` is compiled into both the app and the widget, so the two can't define it differently.
 
 Key files: `src/timer/timerModel.ts`, `src/timer/reconcile.ts`, `src/timer/useStudyTimer.ts`, `src/native/`, `ios/StudyTimer/LiveActivity/`, `ios/StudyTimerWidget/StudyTimerLiveActivity.swift`.
@@ -88,15 +89,39 @@ xcrun simctl launch --terminate-running-process booted com.ncoelius.studytimer \
   -debugCommand "studytimer://debug/start?name=Chapter%205&goal=1500"   # or: pause, resume, stop, stress
 ```
 
-The same URLs work with `xcrun simctl openurl`, but iOS then asks "Open in Study Timer?". A DEBUG panel at the bottom of the screen shows how many Live Activities ActivityKit reports and runs a 20-cycle start/stop stress test. The expected result is "0 activities left". None of this is compiled into release builds.
+The same URLs work with `xcrun simctl openurl`, but iOS then asks "Open in Study Timer?".
+
+To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also shows it. The panel shows how many Live Activities ActivityKit reports and runs a 20-cycle start/stop stress test. The expected result is "0 activities left". The panel is hidden otherwise, and none of this is compiled into release builds.
 
 ## Assumptions
 
 - **Goal and progress.** The spec asks for a progress ring but not what it measures. It measures progress toward an optional goal (25 / 50 / 90 min, default 25). Past the goal the ring stays full and the app shows "Goal reached". With no goal, the island shows a plain ring and the app hides the bar.
 - **Time format on the Live Activity.** The app always shows `HH:MM:SS`. The Live Activity uses the system's self-updating timer, which formats as `M:SS` under an hour and `H:MM:SS` above. No system format produces a ticking `HH:MM:SS`; I checked `Text(timerInterval:)` and iOS 18's `SystemFormatStyle.Timer`. The paused text uses the same format, so the clock doesn't change shape when you pause.
-- **Dimmed Lock Screen.** In Always-On / reduced-luminance mode, iOS stops ticking seconds and would show `7:--`. The Lock Screen switches to a minute-precision system format ("7 minutes") in that state.
+- **Dimmed Lock Screen.** In Always-On / reduced-luminance mode, iOS stops ticking seconds and would show `7:--`. The Lock Screen switches to a minute-precision system format ("7 minutes") in that state. During a session's first minute this reads "0 minutes". No system format says "under a minute", and the widget can't switch text over time while the screen is dimmed, so "0 minutes" is the accurate option.
 - **"Time left" rounds down.** The label under the in-app progress bar shows time left rounded down to the minute ("1 hour, 2 min left" with 1 h 2 m 32 s remaining, and "Less than 1 min left" under a minute). It therefore lags the `HH:MM:SS` clock by up to 59 seconds. Rounding down avoids promising time that isn't there, and other apps seem to do the same. Even so, we'd test it with real users to see whether the mismatch is noticeable or bothersome.
 - **App killed.** The Live Activity persists with the correct time, since it ticks itself. The spec allows either ending it or keeping it. On relaunch the app restores the session and reattaches.
-- **One session at a time.** "Start New Session" during a session asks for confirmation, then ends the current one.
-- **Activity lifetime.** iOS ends a Live Activity after about 8 hours. If a session runs longer, the app recreates the activity the next time it comes to the foreground.
+- **One session at a time.** "Start New Session" during a session asks for confirmation. "End & Start New" then ends the current session right away, showing its summary, and opens the new-session form.
+- **Swiping the Live Activity away.** If the user dismisses it from the Lock Screen, it stays dismissed for the rest of that session. The next session shows a new one. If Live Activities were off when the session started and are turned on later, the activity appears the next time the app comes to the foreground.
+- **Activity lifetime.** iOS ends a Live Activity after about 8 hours, but it can linger on the Lock Screen for hours. The next time the app comes to the foreground, it dismisses the lingering one and starts a fresh one. Stop always clears both.
+- **Goal reached on the Live Activity.** It flips to "Goal reached" at the goal time while running, through `staleDate` (see How it works). iOS won't mark an activity stale sooner than about 2 minutes after its last update. The 25 / 50 / 90 min goals flip on time, but resuming with less than 2 minutes to the goal makes the flip land about 2 minutes after the resume. I saw this in the system log: a 1-minute goal flipped at 2 minutes, and a 3-minute goal flipped on time. A paused activity is frozen, so it shows "Goal reached" only if it was paused after the goal.
+- **Clock changes.** All times are epoch milliseconds, so time zone changes have no effect. If the user sets the clock back while paused, resuming keeps the paused time exactly. While running, the elapsed time follows the wall clock.
 - **Platform.** iOS 17.0+ only, tested on the simulator as the spec allows. Running on a device needs a signing team set in Xcode for the StudyTimer and StudyTimerWidget targets.
+
+## Future work
+
+**Goal-reached notification.** The timer deliberately doesn't stop at the goal, since someone may want to keep going. A local notification at the goal moment would still tell them, even if the phone is in a pocket. "Local" means iOS schedules it on the device, with no server.
+
+- **Why a notification.** The Live Activity's own alert (ActivityKit's `AlertConfiguration`) only fires when an update is sent at that moment, which needs the app awake or a push server. A scheduled local notification fires on time with the app suspended or killed. It also isn't subject to the ~2 minute minimum that applies to the stale flip.
+- **Native.** Three TurboModule methods, using `UNUserNotificationCenter` with one fixed identifier, so a new schedule replaces the old one and at most one is pending:
+  - `requestNotificationPermission()`
+  - `scheduleGoalNotification(name, fireDateMs)`
+  - `cancelGoalNotification()`
+- **JS.** The notification would follow the timer alongside the Live Activity, through the same serial chain:
+  - Start or resume with the goal still ahead: schedule it for the goal moment.
+  - Pause, stop or a new session: cancel it.
+  - Launch: re-schedule from the saved session.
+
+  Because resume re-schedules from the shifted start, pauses are accounted for.
+- **Permission.** Ask the first time a session with a goal starts, when the value is obvious. If the user declines, nothing else changes.
+- **Content.** "Goal reached 🎉" / "Chapter 5 Review: 25 min. Keep going, or stop when you're ready." Tapping it opens the app. A Stop action on the notification is possible, but it needs native handling while JS isn't running, so it's a follow-up.
+

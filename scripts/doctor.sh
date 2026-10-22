@@ -14,8 +14,9 @@ XCODE_MAJOR=$(xcodebuild -version | head -1 | awk '{print $2}' | cut -d. -f1)
 ok "$(xcodebuild -version | head -1)"
 
 command -v node >/dev/null || fail "Node.js not found" "brew install node"
-NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
-(( NODE_MAJOR >= 22 )) || fail "Node $(node -v) is too old (need >= 22.11)" "brew upgrade node"
+# package.json engines: >= 22.11.0
+node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=11)?0:1)' \
+  || fail "Node $(node -v) is too old (need >= 22.11)" "brew upgrade node"
 ok "Node $(node -v)"
 
 command -v pod >/dev/null || fail "CocoaPods not found" "brew install cocoapods"
