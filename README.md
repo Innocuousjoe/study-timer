@@ -175,3 +175,13 @@ I built this with Claude Code. Below is where it was wrong, how each problem was
 - **The compact view shows the activity instead of a truncated name.** For example, "Studying" plus the time. SwiftUI's `ViewThatFits` could keep the full name when it fits and fall back to the activity only when it wouldn't, which never shows "…" and stays closest to the spec. The status word under the expanded ring would show the activity ("Studying") rather than the generic "Focusing".
 - **Plumbing.** The activity would be one more field on the session and one more fixed attribute on the Live Activity, like the name. A blank session name would default to the activity.
 
+
+**Session history.** Today a finished session shows a "Session complete" card, which disappears with the next session. A history screen would keep every finished session:
+
+- **List.** Previous sessions, newest first, grouped by day. Each row shows the name, focused time, goal (and whether it was reached), the activity type if that feature exists, and when it started. Daily and weekly totals go at the top.
+- **Notes.** Attach a note or comment to a session, e.g. "finished problems 1–12; struggled with stereochemistry". You can add it straight from the "Session complete" card, or later from the session's detail view. You can also edit or delete a session.
+- **Data model.** On Stop or "End & Start New", append a `CompletedSession` to storage. Its fields: id, name, `startedAt`, `endedAt`, focused seconds, total paused seconds, goal seconds, goal reached, activity type, note.
+  - The live session stores an *effective* `startDate`, shifted forward by time spent paused, so the real start time would need its own `startedAt` field. Paused time would be tracked as pauses happen.
+  - The completed card already computes the focused time at the moment you stop, so that's the natural place to write the record.
+- **Storage.** AsyncStorage is fine for a few hundred sessions. Beyond that, or for totals and search, SQLite is the better fit. Records stay on the device, with optional iCloud sync later.
+- **Natural follow-ons.** Streaks, a per-activity breakdown, and starting a new session from a past one ("repeat Chapter 5 Review, 50 min").
