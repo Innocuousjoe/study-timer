@@ -54,6 +54,7 @@ export function useStudyTimer({
   const stateRef = useRef(state);
   const [now, setNow] = useState(clock);
   const [hydrated, setHydrated] = useState(false);
+  const hydratedRef = useRef(false);
   const [laStatus, setLaStatus] = useState<LiveActivityStatus>(() =>
     readStatus(activities),
   );
@@ -65,6 +66,40 @@ export function useStudyTimer({
     });
     return chain.current;
   }, []);
+
+  const persist = useCallback(
+    async (session: Session | null) => {
+      try {
+        await storage.setItem(SESSION_STORAGE_KEY, serializeSession(session));
+      } catch (error) {
+        // Keep going: the activity must still follow the user's action. The
+        // next launch reconciles against whatever was last saved.
+        console.warn('[StudyTimer] could not save session', error);
+      }
+    },
+    [storage],
+  );
+
+  /** Start an activity; once it exists, remember that for this session. */
+  const startActivity = useCallback(
+    async (session: Session) => {
+      const activityId = await activities.start(session);
+      if (!activityId) {
+        return;
+      }
+      const prev = stateRef.current;
+      const next = timerReducer(prev, {
+        type: 'activityShown',
+        id: session.id,
+      });
+      if (next !== prev) {
+        stateRef.current = next;
+        setState(next);
+        await persist(next.session);
+      }
+    },
+    [activities, persist],
+  );
 
   const reconcileActivities = useCallback(
     () =>
@@ -78,12 +113,12 @@ export function useStudyTimer({
           } else if (action.type === 'update') {
             activities.update(action.session);
           } else if (enabled) {
-            activities.start(action.session);
+            await startActivity(action.session);
           }
         }
         await activities.idle();
       }),
-    [activities, serially],
+    [activities, serially, startActivity],
   );
 
   // Hydrate from storage once, then repair any Live Activity drift.
@@ -108,6 +143,7 @@ export function useStudyTimer({
       stateRef.current = next;
       setState(next);
       setNow(clock());
+      hydratedRef.current = true;
       setHydrated(true);
       await reconcileActivities();
     })();
@@ -119,13 +155,18 @@ export function useStudyTimer({
   }, []);
 
   // Coming back to the foreground: the JS clock was suspended, so recompute
-  // from timestamps, re-check Settings, and repair the activity.
+  // from timestamps, re-check Settings, and repair the activity. Before
+  // hydration finishes there is no session in memory yet, and reconciling
+  // then would end the restored session's activity; hydration reconciles
+  // on its own when it's done.
   useEffect(() => {
     const sub = AppState.addEventListener('change', appState => {
       if (appState === 'active') {
         setNow(clock());
         setLaStatus(readStatus(activities));
-        reconcileActivities();
+        if (hydratedRef.current) {
+          reconcileActivities();
+        }
       }
     });
     return () => sub.remove();
@@ -168,12 +209,12 @@ export function useStudyTimer({
       const before = prev.session;
       const after = next.session;
       serially(async () => {
-        await storage.setItem(SESSION_STORAGE_KEY, serializeSession(after));
+        await persist(after);
         if (!after) {
           activities.endAll();
         } else if (after.id !== before?.id) {
           if (activities.areEnabled()) {
-            activities.start(after);
+            await startActivity(after);
           } else if (before) {
             activities.endAll();
           }
@@ -182,7 +223,7 @@ export function useStudyTimer({
         }
       });
     },
-    [activities, clock, serially, storage],
+    [activities, clock, persist, serially, startActivity],
   );
 
   const start = useCallback(

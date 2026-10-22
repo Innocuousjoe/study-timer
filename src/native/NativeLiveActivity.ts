@@ -26,6 +26,8 @@ export type ActivitySnapshotSpec = {
   sessionId: string;
   startDate: number;
   pausedAt: number | null;
+  /** iOS already ended it (time limit) but it is still on screen. */
+  ended: boolean;
 };
 
 export interface Spec extends TurboModule {
@@ -37,9 +39,9 @@ export interface Spec extends TurboModule {
   updateActivity(session: ActivitySessionSpec): Promise<void>;
   /** Ends one activity, dismissing it from the Lock Screen immediately. */
   endActivity(activityId: string): Promise<void>;
-  /** Ends every activity this app owns. */
+  /** Ends every activity this app owns, including ones iOS already ended. */
   endAllActivities(): Promise<void>;
-  /** Active or stale activities, oldest first. */
+  /** Every activity still on screen (not dismissed), oldest first. */
   listActivities(): Promise<ActivitySnapshotSpec[]>;
 }
 

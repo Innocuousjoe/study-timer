@@ -15,6 +15,8 @@
 export const DEFAULT_GOAL_SECONDS = 25 * 60;
 export const GOAL_PRESETS_SECONDS = [25 * 60, 50 * 60, 90 * 60] as const;
 export const MAX_NAME_LENGTH = 60;
+/** Upper bound for goals (debug links can pass anything). */
+export const MAX_GOAL_SECONDS = 24 * 60 * 60;
 
 export type Session = {
   /** Unique per session; also stamped on the Live Activity so we can match it. */
@@ -25,6 +27,12 @@ export type Session = {
   startDate: number;
   /** Epoch ms when paused, or null while running. */
   pausedAt: number | null;
+  /**
+   * True once a Live Activity has been created for this session. If it later
+   * disappears without iOS ending it, the user swiped it away, and we respect
+   * that instead of recreating it.
+   */
+  activityShown: boolean;
 };
 
 export type TimerState = { session: Session | null };
@@ -40,7 +48,8 @@ export type TimerAction =
   | { type: 'pause'; now: number }
   | { type: 'resume'; now: number }
   | { type: 'stop' }
-  | { type: 'restore'; session: Session | null };
+  | { type: 'restore'; session: Session | null }
+  | { type: 'activityShown'; id: string };
 
 export const initialTimerState: TimerState = { session: null };
 
@@ -55,9 +64,10 @@ export function timerReducer(
         session: {
           id: action.id,
           name: normalizeName(action.name),
-          goalSeconds: Math.max(0, Math.floor(action.goalSeconds)),
+          goalSeconds: clampGoal(action.goalSeconds),
           startDate: action.now,
           pausedAt: null,
+          activityShown: false,
         },
       };
     case 'pause':
@@ -69,12 +79,14 @@ export function timerReducer(
       if (!session || session.pausedAt === null) {
         return state;
       }
-      // Shift the effective start forward by however long we were paused.
-      const pausedFor = Math.max(0, action.now - session.pausedAt);
+      // Keep the frozen elapsed time exactly: the new effective start is
+      // "now minus what had elapsed". (Shifting startDate by now - pausedAt
+      // breaks if the clock was set back while paused.)
+      const frozen = session.pausedAt - session.startDate;
       return {
         session: {
           ...session,
-          startDate: session.startDate + pausedFor,
+          startDate: action.now - frozen,
           pausedAt: null,
         },
       };
@@ -83,6 +95,11 @@ export function timerReducer(
       return session ? { session: null } : state;
     case 'restore':
       return { session: action.session };
+    case 'activityShown':
+      if (!session || session.id !== action.id || session.activityShown) {
+        return state;
+      }
+      return { session: { ...session, activityShown: true } };
   }
 }
 
@@ -152,6 +169,13 @@ export function formatTimeLeft(remainingSeconds: number): string {
   return m === 0 ? `${hours} left` : `${hours}, ${m} min left`;
 }
 
+function clampGoal(goalSeconds: number): number {
+  if (!Number.isFinite(goalSeconds)) {
+    return 0;
+  }
+  return Math.min(MAX_GOAL_SECONDS, Math.max(0, Math.floor(goalSeconds)));
+}
+
 export function normalizeName(raw: string): string {
   const collapsed = raw.replace(/\s+/g, ' ').trim();
   const name = collapsed.length > 0 ? collapsed : 'Study Session';
@@ -169,13 +193,17 @@ export function deserializeSession(raw: string | null): Session | null {
   }
   try {
     const v = JSON.parse(raw);
+    const finite = (n: unknown): n is number =>
+      typeof n === 'number' && Number.isFinite(n);
     if (
       v &&
       typeof v.id === 'string' &&
       typeof v.name === 'string' &&
-      typeof v.goalSeconds === 'number' &&
-      typeof v.startDate === 'number' &&
-      (v.pausedAt === null || typeof v.pausedAt === 'number')
+      finite(v.goalSeconds) &&
+      v.goalSeconds >= 0 &&
+      v.goalSeconds <= MAX_GOAL_SECONDS &&
+      finite(v.startDate) &&
+      (v.pausedAt === null || finite(v.pausedAt))
     ) {
       return {
         id: v.id,
@@ -183,6 +211,8 @@ export function deserializeSession(raw: string | null): Session | null {
         goalSeconds: v.goalSeconds,
         startDate: v.startDate,
         pausedAt: v.pausedAt,
+        // Absent in sessions saved before this field existed.
+        activityShown: v.activityShown === true,
       };
     }
   } catch {

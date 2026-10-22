@@ -1,11 +1,16 @@
 import type { Session } from './timerModel';
 
-/** What the native side reports for each live (active or stale) activity. */
+/** What the native side reports for each activity still on screen. */
 export type ActivitySnapshot = {
   activityId: string;
   sessionId: string;
   startDate: number;
   pausedAt: number | null;
+  /**
+   * iOS already ended it (the ~8 h limit) but it can linger on the Lock
+   * Screen for up to 4 more hours. Never kept; always cleaned up.
+   */
+  ended: boolean;
 };
 
 export type ReconcileAction =
@@ -19,10 +24,15 @@ export type ReconcileAction =
  * launch and on every return to the foreground.
  *
  * - No session → every activity is a zombie and gets ended.
- * - Session → keep exactly one matching activity, updating it if its state
- *   drifted (e.g. app killed between persisting a pause and telling
- *   ActivityKit). If none match (swiped away, hit the system's 8 h limit,
- *   or never created), create one.
+ * - Session → keep exactly one live matching activity, updating it if its
+ *   state drifted (e.g. app killed between persisting a pause and telling
+ *   ActivityKit). Everything else is ended, including activities iOS already
+ *   ended at its time limit, which would otherwise linger.
+ * - No live match →
+ *   - iOS ended ours at the time limit, or we never managed to show one
+ *     (Live Activities were off, the request failed): create one.
+ *   - We showed one and it's simply gone: the user swiped it away. Respect
+ *     that for the rest of the session.
  *
  * `snapshots` arrive in ActivityKit order, oldest first, so when duplicates
  * exist we keep the last (newest) one.
@@ -36,18 +46,24 @@ export function reconcile(
   }
 
   const matching = snapshots.filter(s => s.sessionId === session.id);
-  const keep = matching[matching.length - 1];
+  const live = matching.filter(s => !s.ended);
+  const keep = live[live.length - 1];
   const actions: ReconcileAction[] = snapshots
     .filter(s => s !== keep)
     .map(s => ({ type: 'end', activityId: s.activityId }));
 
-  if (!keep) {
-    actions.push({ type: 'create', session });
-  } else if (
-    !sameInstant(keep.startDate, session.startDate) ||
-    !sameInstant(keep.pausedAt, session.pausedAt)
-  ) {
-    actions.push({ type: 'update', activityId: keep.activityId, session });
+  if (keep) {
+    if (
+      !sameInstant(keep.startDate, session.startDate) ||
+      !sameInstant(keep.pausedAt, session.pausedAt)
+    ) {
+      actions.push({ type: 'update', activityId: keep.activityId, session });
+    }
+  } else {
+    const endedBySystem = matching.length > 0;
+    if (endedBySystem || !session.activityShown) {
+      actions.push({ type: 'create', session });
+    }
   }
   return actions;
 }

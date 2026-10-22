@@ -22,6 +22,31 @@ export type DebugCommand =
 
 const PREFIX = 'studytimer://debug/';
 
+/**
+ * The DEBUG panel (activity count, stress test) is opt-in so the normal app
+ * stays clean in debug builds:
+ *   xcrun simctl launch booted com.ncoelius.studytimer -debugPanel YES
+ * Passing a -debugCommand also shows it, so scripted runs can read the count.
+ */
+export function debugPanelRequested(): boolean {
+  if (!__DEV__) {
+    return false;
+  }
+  try {
+    // Lazy require: Settings is iOS-only and absent under Jest.
+    const { Settings } = require('react-native');
+    const flag = Settings.get('debugPanel');
+    return (
+      flag === true ||
+      flag === 'YES' ||
+      flag === 1 ||
+      typeof Settings.get('debugCommand') === 'string'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function parseDebugLink(url: string | null): DebugCommand | null {
   if (!url || !url.startsWith(PREFIX)) {
     return null;

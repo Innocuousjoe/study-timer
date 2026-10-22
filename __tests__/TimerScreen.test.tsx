@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { createLiveActivityClient } from '../src/native/liveActivity';
 import { TimerScreen } from '../src/ui/TimerScreen';
@@ -13,7 +13,7 @@ const T0 = Date.UTC(2026, 9, 22, 9, 0, 0);
 beforeEach(() => jest.useFakeTimers({ now: T0 }));
 afterEach(() => jest.useRealTimers());
 
-async function setup(enabled = true) {
+async function setup(enabled = true, showDebug = true) {
   const fake = createFakeNative({ enabled });
   const activities = createLiveActivityClient(fake.spec, () => {});
   await render(
@@ -23,7 +23,11 @@ async function setup(enabled = true) {
         insets: { top: 47, left: 0, right: 0, bottom: 34 },
       }}
     >
-      <TimerScreen storage={createMemoryStore()} activities={activities} />
+      <TimerScreen
+        storage={createMemoryStore()}
+        activities={activities}
+        showDebug={showDebug}
+      />
     </SafeAreaProvider>,
   );
   await act(async () => {});
@@ -116,6 +120,42 @@ describe('TimerScreen (as a user)', () => {
   it('warns when Live Activities are turned off', async () => {
     await setup(false);
     expect(screen.getByText(/Live Activities are off/)).toBeOnTheScreen();
+  });
+
+  it('"End & Start New" ends the session immediately and shows its summary', async () => {
+    const { fake } = await setup();
+    await fireEvent.changeText(
+      screen.getByTestId('session-name-input'),
+      'Chapter 5 Review',
+    );
+    await fireEvent.press(screen.getByTestId('start-button'));
+    await advance(5010);
+
+    const alert = jest.spyOn(Alert, 'alert');
+    await fireEvent.press(screen.getByText('Start New Session'));
+    const buttons = alert.mock.calls[0][2]!;
+    expect(buttons.map(b => b.text)).toEqual(['Keep Going', 'End & Start New']);
+
+    await act(async () => buttons[1].onPress!());
+    expect(screen.getByText('Session complete')).toBeOnTheScreen();
+    expect(screen.getByText('00:00:05')).toBeOnTheScreen();
+    expect(screen.getByTestId('start-button')).toBeOnTheScreen();
+    expect(fake.activities).toHaveLength(0);
+  });
+
+  it('"Keep Going" leaves the session running', async () => {
+    await setup();
+    await fireEvent.press(screen.getByTestId('start-button'));
+    const alert = jest.spyOn(Alert, 'alert');
+    await fireEvent.press(screen.getByText('Start New Session'));
+    // Cancel-style buttons have no handler; nothing changes.
+    expect(alert.mock.calls[0][2]![0].onPress).toBeUndefined();
+    expect(screen.getByTestId('stop-button')).toBeOnTheScreen();
+  });
+
+  it('hides the DEBUG panel unless requested', async () => {
+    await setup(true, false);
+    expect(screen.queryByTestId('stress-button')).toBeNull();
   });
 
   it('stress test leaves no activities behind', async () => {

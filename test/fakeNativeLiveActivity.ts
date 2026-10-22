@@ -6,20 +6,24 @@ import type {
 
 /**
  * In-memory stand-in for the native module that behaves like ActivityKit:
- * activities have ids, start ends existing ones first, and every call is
- * recorded so tests can assert ordering.
+ * activities have ids, start ends existing ones first (including ones iOS
+ * already ended), start rejects when Live Activities are off, and every call
+ * is recorded so tests can assert ordering.
  */
-export function createFakeNative(opts: { enabled?: boolean } = {}) {
+export function createFakeNative(
+  opts: { enabled?: boolean; log?: string[] } = {},
+) {
   let enabled = opts.enabled ?? true;
   let nextId = 0;
   const activities: ActivitySnapshotSpec[] = [];
-  const calls: string[] = [];
+  const calls: string[] = opts.log ?? [];
 
   const snapshot = (s: ActivitySessionSpec, activityId: string) => ({
     activityId,
     sessionId: s.sessionId,
     startDate: s.startDate,
     pausedAt: s.pausedAt,
+    ended: false,
   });
 
   const spec: Spec = {
@@ -27,6 +31,9 @@ export function createFakeNative(opts: { enabled?: boolean } = {}) {
     startActivity: async s => {
       calls.push(`start:${s.sessionId}`);
       activities.splice(0);
+      if (!enabled) {
+        throw new Error('Live Activities are turned off');
+      }
       const id = `a${++nextId}`;
       activities.push(snapshot(s, id));
       return id;
@@ -35,10 +42,11 @@ export function createFakeNative(opts: { enabled?: boolean } = {}) {
       calls.push(
         `update:${s.sessionId}:${s.pausedAt === null ? 'running' : 'paused'}`,
       );
-      const i = activities.findIndex(a => a.sessionId === s.sessionId);
-      if (i >= 0) {
-        activities[i] = snapshot(s, activities[i].activityId);
-      }
+      activities.forEach((a, i) => {
+        if (a.sessionId === s.sessionId && !a.ended) {
+          activities[i] = snapshot(s, a.activityId);
+        }
+      });
     },
     endActivity: async id => {
       calls.push(`end:${id}`);
@@ -62,10 +70,22 @@ export function createFakeNative(opts: { enabled?: boolean } = {}) {
       enabled = v;
     },
     /** Simulate an activity left behind by an earlier run or a crash. */
-    seed: (a: Omit<ActivitySnapshotSpec, 'activityId'>) => {
+    seed: (a: Omit<ActivitySnapshotSpec, 'activityId' | 'ended'>) => {
       const id = `a${++nextId}`;
-      activities.push({ activityId: id, ...a });
+      activities.push({ activityId: id, ended: false, ...a });
       return id;
+    },
+    /** The user swiped it off the Lock Screen: gone from ActivityKit's list. */
+    swipeAway: (activityId: string) => {
+      const i = activities.findIndex(a => a.activityId === activityId);
+      activities.splice(i, 1);
+    },
+    /** iOS ended it at the ~8 h limit; it lingers on screen as ended. */
+    endBySystem: (activityId: string) => {
+      const a = activities.find(x => x.activityId === activityId);
+      if (a) {
+        a.ended = true;
+      }
     },
   };
 }

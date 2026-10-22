@@ -12,22 +12,34 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { parseDebugLink, type DebugCommand } from '../debug/debugLinks';
+import {
+  debugPanelRequested,
+  parseDebugLink,
+  type DebugCommand,
+} from '../debug/debugLinks';
 import type { LiveActivityClient } from '../native/liveActivity';
 import { formatGoal, formatHMS, formatTimeLeft } from '../timer/timerModel';
 import { useStudyTimer, type KeyValueStore } from '../timer/useStudyTimer';
 import { NewSessionForm } from './NewSessionForm';
 import { useTheme, type Theme } from './theme';
 
-type Props = { storage: KeyValueStore; activities: LiveActivityClient };
+type Props = {
+  storage: KeyValueStore;
+  activities: LiveActivityClient;
+  /** DEBUG panel; defaults to the -debugPanel / -debugCommand launch args. */
+  showDebug?: boolean;
+};
 
 type Completed = { name: string; elapsed: number };
 
-export function TimerScreen({ storage, activities }: Props) {
+export function TimerScreen({
+  storage,
+  activities,
+  showDebug = debugPanelRequested(),
+}: Props) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const timer = useStudyTimer({ storage, activities });
-  const [composing, setComposing] = useState(false);
   const [completed, setCompleted] = useState<Completed | null>(null);
   const [stressResult, setStressResult] = useState<string | null>(null);
   const activityCount = useActivityCount(timer, activities);
@@ -42,7 +54,6 @@ export function TimerScreen({ storage, activities }: Props) {
   };
 
   const startNew = (name: string, goal: number) => {
-    setComposing(false);
     setCompleted(null);
     timer.start(name, goal);
   };
@@ -75,29 +86,22 @@ export function TimerScreen({ storage, activities }: Props) {
   };
   useDebugLinks(timer.hydrated, handleDebug);
 
+  // Ends the current session right away (with its completed card), as the
+  // button says; the new-session form then shows because nothing is running.
   const askStartNew = () =>
     Alert.alert('Start a new session?', `“${session?.name}” will end.`, [
       { text: 'Keep Going', style: 'cancel' },
-      {
-        text: 'End & Start New',
-        style: 'destructive',
-        onPress: () => setComposing(true),
-      },
+      { text: 'End & Start New', style: 'destructive', onPress: stop },
     ]);
 
   let body: React.ReactNode;
   if (!timer.hydrated) {
     body = <ActivityIndicator style={styles.loading} color={t.muted} />;
-  } else if (!session || composing) {
+  } else if (!session) {
     body = (
       <>
-        {completed && !composing && (
-          <CompletedCard t={t} completed={completed} />
-        )}
-        <NewSessionForm
-          onStart={startNew}
-          onCancel={composing ? () => setComposing(false) : undefined}
-        />
+        {completed && <CompletedCard t={t} completed={completed} />}
+        <NewSessionForm onStart={startNew} />
       </>
     );
   } else {
@@ -204,7 +208,7 @@ export function TimerScreen({ storage, activities }: Props) {
           <LiveActivitiesOffBanner t={t} />
         )}
         {body}
-        {__DEV__ && timer.hydrated && (
+        {__DEV__ && showDebug && timer.hydrated && (
           <StressTest
             t={t}
             onRun={runStress}

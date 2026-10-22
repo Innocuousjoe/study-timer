@@ -10,12 +10,11 @@ import { useTheme } from './theme';
 
 type Props = {
   onStart: (name: string, goalSeconds: number) => void;
-  onCancel?: () => void;
 };
 
 const GOAL_OPTIONS = [...GOAL_PRESETS_SECONDS, 0];
 
-export function NewSessionForm({ onStart, onCancel }: Props) {
+export function NewSessionForm({ onStart }: Props) {
   const t = useTheme();
   const [name, setName] = useState('');
   const [goal, setGoal] = useState<number>(DEFAULT_GOAL_SECONDS);
@@ -88,16 +87,6 @@ export function NewSessionForm({ onStart, onCancel }: Props) {
           Start Session
         </Text>
       </Pressable>
-
-      {onCancel && (
-        <Pressable
-          onPress={onCancel}
-          accessibilityRole="button"
-          style={styles.cancel}
-        >
-          <Text style={[styles.cancelText, { color: t.muted }]}>Cancel</Text>
-        </Pressable>
-      )}
     </View>
   );
 }
@@ -133,6 +122,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryText: { fontSize: 17, fontWeight: '700' },
-  cancel: { alignItems: 'center', paddingVertical: 10 },
-  cancelText: { fontSize: 16 },
 });

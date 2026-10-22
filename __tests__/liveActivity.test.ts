@@ -9,6 +9,7 @@ const session = (id: string): Session => ({
   goalSeconds: 60,
   startDate: 0,
   pausedAt: null,
+  activityShown: false,
 });
 
 type Deferred = { label: string; resolve: () => void };

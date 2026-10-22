@@ -7,6 +7,7 @@ const session: Session = {
   goalSeconds: 1500,
   startDate: 1_000_000,
   pausedAt: null,
+  activityShown: true,
 };
 
 const snap = (
@@ -17,6 +18,7 @@ const snap = (
   sessionId: 's1',
   startDate: session.startDate,
   pausedAt: null,
+  ended: false,
   ...over,
 });
 
@@ -44,14 +46,44 @@ describe('reconcile', () => {
     ).toEqual([]);
   });
 
-  it('recreates the activity when it is missing (swiped away / 8 h limit)', () => {
-    expect(reconcile(session, [])).toEqual([{ type: 'create', session }]);
+  it('respects a swipe-away: shown before, now gone → leave it gone', () => {
+    expect(reconcile(session, [])).toEqual([]);
   });
 
-  it('ends activities from other sessions and creates one for this session', () => {
+  it('creates the activity if this session never got one (LA was off, request failed)', () => {
+    const neverShown = { ...session, activityShown: false };
+    expect(reconcile(neverShown, [])).toEqual([
+      { type: 'create', session: neverShown },
+    ]);
+  });
+
+  it('replaces an activity iOS ended at its time limit, ending the lingering one', () => {
+    expect(reconcile(session, [snap('a', { ended: true })])).toEqual([
+      { type: 'end', activityId: 'a' },
+      { type: 'create', session },
+    ]);
+  });
+
+  it('ends a lingering ended activity alongside the live one it keeps', () => {
+    expect(reconcile(session, [snap('a', { ended: true }), snap('b')])).toEqual(
+      [{ type: 'end', activityId: 'a' }],
+    );
+  });
+
+  it('ends ended activities when there is no session', () => {
+    expect(reconcile(null, [snap('a', { ended: true })])).toEqual([
+      { type: 'end', activityId: 'a' },
+    ]);
+  });
+
+  it('ends activities from other sessions; does not resurrect a dismissed one', () => {
     expect(reconcile(session, [snap('old', { sessionId: 's0' })])).toEqual([
       { type: 'end', activityId: 'old' },
-      { type: 'create', session },
+    ]);
+    const neverShown = { ...session, activityShown: false };
+    expect(reconcile(neverShown, [snap('old', { sessionId: 's0' })])).toEqual([
+      { type: 'end', activityId: 'old' },
+      { type: 'create', session: neverShown },
     ]);
   });
 

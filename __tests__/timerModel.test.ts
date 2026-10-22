@@ -102,13 +102,48 @@ describe('timerReducer + elapsedSeconds', () => {
     expect(elapsedSeconds(session!, sec(1001))).toBe(1);
   });
 
-  it('does not count backwards if resume is stamped before pause', () => {
+  it('keeps the frozen time when the clock is set back while paused', () => {
+    // Paused showing 50 s; the user sets the clock 10 s *before* the pause.
     const { session } = run(
       start(),
       { type: 'pause', now: sec(50) },
       { type: 'resume', now: sec(40) },
     );
-    expect(elapsedSeconds(session!, sec(50))).toBe(50);
+    expect(elapsedSeconds(session!, sec(40))).toBe(50); // at the moment of resume
+    expect(elapsedSeconds(session!, sec(45))).toBe(55);
+  });
+
+  it('keeps the frozen time when the clock jumps far back (before the start)', () => {
+    const { session } = run(
+      start(),
+      { type: 'pause', now: sec(1800) },
+      { type: 'resume', now: sec(-1800) },
+    );
+    expect(elapsedSeconds(session!, sec(-1800))).toBe(1800);
+  });
+
+  it('clamps goals to 0...24 h and treats non-finite goals as no goal', () => {
+    const goal = (g: number) =>
+      run({ type: 'start', id: 's', name: 'x', goalSeconds: g, now: T0 })
+        .session!.goalSeconds;
+    expect(goal(-5)).toBe(0);
+    expect(goal(Infinity)).toBe(0);
+    expect(goal(NaN)).toBe(0);
+    expect(goal(10 * 24 * 3600)).toBe(24 * 3600);
+    expect(goal(1500.7)).toBe(1500);
+  });
+
+  it('records that an activity was shown, only for the current session', () => {
+    const started = run(start());
+    expect(started.session!.activityShown).toBe(false);
+    const shown = timerReducer(started, { type: 'activityShown', id: 's1' });
+    expect(shown.session!.activityShown).toBe(true);
+    expect(timerReducer(started, { type: 'activityShown', id: 'other' })).toBe(
+      started,
+    );
+    expect(timerReducer(shown, { type: 'activityShown', id: 's1' })).toBe(
+      shown,
+    );
   });
 });
 
@@ -199,10 +234,24 @@ describe('persistence', () => {
     expect(deserializeSession(serializeSession(null))).toBeNull();
   });
 
-  it.each([null, '', 'not json', '{"id":1}', '[]', '{"id":"x","name":"n"}'])(
-    'rejects corrupt value %p',
-    raw => {
-      expect(deserializeSession(raw)).toBeNull();
-    },
-  );
+  it('defaults activityShown for sessions saved before the field existed', () => {
+    const legacy =
+      '{"id":"x","name":"n","goalSeconds":60,"startDate":1,"pausedAt":null}';
+    expect(deserializeSession(legacy)?.activityShown).toBe(false);
+  });
+
+  it.each([
+    null,
+    '',
+    'not json',
+    '{"id":1}',
+    '[]',
+    '{"id":"x","name":"n"}',
+    '{"id":"x","name":"n","goalSeconds":1e999,"startDate":1,"pausedAt":null}',
+    '{"id":"x","name":"n","goalSeconds":-1,"startDate":1,"pausedAt":null}',
+    '{"id":"x","name":"n","goalSeconds":60,"startDate":-1e999,"pausedAt":null}',
+    '{"id":"x","name":"n","goalSeconds":60,"startDate":1,"pausedAt":"soon"}',
+  ])('rejects corrupt value %p', raw => {
+    expect(deserializeSession(raw)).toBeNull();
+  });
 });

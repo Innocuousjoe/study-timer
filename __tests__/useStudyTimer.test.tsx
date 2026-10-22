@@ -1,7 +1,11 @@
 import { act, renderHook } from '@testing-library/react-native';
 import { AppState, type AppStateStatus } from 'react-native';
 import { createLiveActivityClient } from '../src/native/liveActivity';
-import { SESSION_STORAGE_KEY, useStudyTimer } from '../src/timer/useStudyTimer';
+import {
+  SESSION_STORAGE_KEY,
+  useStudyTimer,
+  type KeyValueStore,
+} from '../src/timer/useStudyTimer';
 import { serializeSession, type Session } from '../src/timer/timerModel';
 import {
   createFakeNative,
@@ -31,20 +35,23 @@ async function setup(
     stored?: Session | null;
     enabled?: boolean;
     seed?: (fake: ReturnType<typeof createFakeNative>) => void;
+    storage?: KeyValueStore;
+    log?: string[];
   } = {},
 ) {
-  const fake = createFakeNative({ enabled: opts.enabled });
+  const fake = createFakeNative({ enabled: opts.enabled, log: opts.log });
   opts.seed?.(fake);
-  const storage = createMemoryStore(
+  const memory = createMemoryStore(
     opts.stored ? { [SESSION_STORAGE_KEY]: serializeSession(opts.stored) } : {},
   );
+  const storage = opts.storage ?? memory;
   const activities = createLiveActivityClient(fake.spec, () => {});
   let ids = 0;
   const hook = await renderHook(() =>
     useStudyTimer({ storage, activities, newId: () => `s${++ids}` }),
   );
   await settle(hook.result);
-  return { fake, storage, ...hook };
+  return { fake, storage: memory, ...hook };
 }
 
 /** Lets pending storage + native work finish inside act(). */
@@ -132,13 +139,87 @@ describe('useStudyTimer', () => {
   });
 
   it('persists every change before telling ActivityKit', async () => {
-    const { result, storage } = await setup();
+    // Storage writes and native calls go into one log, so order is visible.
+    const log: string[] = [];
+    const memory = createMemoryStore();
+    const storage: KeyValueStore = {
+      getItem: memory.getItem,
+      setItem: async (k, v) => {
+        const session = JSON.parse(v) as Session | null;
+        log.push(
+          session === null
+            ? 'save:none'
+            : `save:${session.pausedAt === null ? 'running' : 'paused'}${
+                session.activityShown ? ':shown' : ''
+              }`,
+        );
+        await memory.setItem(k, v);
+      },
+    };
+    const { result } = await setup({ storage, log });
     await act(async () => result.current.start('Chapter 5 Review', 1500));
     await advance(5000);
     await act(async () => result.current.pause());
+    await act(async () => result.current.stop());
     await settle(result);
-    const saved = JSON.parse(storage.data.get(SESSION_STORAGE_KEY)!);
-    expect(saved).toMatchObject({ id: 's1', pausedAt: T0 + 5000 });
+    expect(log).toEqual([
+      'save:running',
+      'start:s1',
+      'save:running:shown', // remembers the activity exists (for swipe-away)
+      'save:paused:shown',
+      'update:s1:paused',
+      'save:none',
+      'endAll',
+    ]);
+  });
+
+  it('still updates ActivityKit when saving fails (e.g. disk full)', async () => {
+    const failing: KeyValueStore = {
+      getItem: async () => null,
+      setItem: async () => {
+        throw new Error('disk full');
+      },
+    };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { result, fake } = await setup({ storage: failing });
+    await act(async () => result.current.start('Chapter 5 Review', 1500));
+    await act(async () => result.current.stop());
+    await settle(result);
+    expect(fake.calls).toEqual(['start:s1', 'endAll']);
+    expect(fake.activities).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(
+      '[StudyTimer] could not save session',
+      expect.any(Error),
+    );
+  });
+
+  it('respects a swipe-away for the rest of the session, then shows the next one', async () => {
+    const { result, fake } = await setup();
+    await act(async () => result.current.start('Chapter 5 Review', 1500));
+    await settle(result);
+    fake.swipeAway('a1');
+
+    await setAppState('active');
+    await settle(result);
+    expect(fake.calls).toEqual(['start:s1']); // not recreated
+
+    await act(async () => result.current.start('Next chapter', 1500));
+    await settle(result);
+    expect(fake.calls).toEqual(['start:s1', 'start:s2']);
+  });
+
+  it('replaces an activity iOS ended at its time limit', async () => {
+    const { result, fake } = await setup();
+    await act(async () => result.current.start('Chapter 5 Review', 1500));
+    await settle(result);
+    fake.endBySystem('a1');
+
+    await setAppState('active');
+    await settle(result);
+    expect(fake.calls).toEqual(['start:s1', 'end:a1', 'start:s1']);
+    expect(fake.activities.map(a => [a.activityId, a.ended])).toEqual([
+      ['a2', false],
+    ]);
   });
 
   describe('relaunch after the app was killed', () => {
@@ -148,6 +229,7 @@ describe('useStudyTimer', () => {
       goalSeconds: 1500,
       startDate: T0 - 90_000,
       pausedAt: null,
+      activityShown: true,
     };
 
     it('restores the session and adopts its still-running activity', async () => {
@@ -173,9 +255,47 @@ describe('useStudyTimer', () => {
       expect(result.current.elapsed).toBe(60);
     });
 
-    it('recreates the activity if it was swiped away', async () => {
+    it('does not recreate an activity the user swiped away', async () => {
       const { fake } = await setup({ stored: running });
+      expect(fake.calls).toEqual([]);
+    });
+
+    it('creates the activity if the session never got one', async () => {
+      const { fake } = await setup({
+        stored: { ...running, activityShown: false },
+      });
       expect(fake.calls).toEqual(['start:old']);
+    });
+
+    it('keeps the activity when the app becomes active before the saved session loads', async () => {
+      // Control Center, a call banner or Face ID during launch can deliver
+      // 'active' while storage is still being read.
+      let finishRead: (v: string) => void = () => {};
+      const slowStorage: KeyValueStore = {
+        getItem: () =>
+          new Promise<string>(resolve => {
+            finishRead = resolve;
+          }),
+        setItem: async () => {},
+      };
+      const fake = createFakeNative();
+      fake.seed({
+        sessionId: 'old',
+        startDate: running.startDate,
+        pausedAt: null,
+      });
+      const activities = createLiveActivityClient(fake.spec, () => {});
+      const { result } = await renderHook(() =>
+        useStudyTimer({ storage: slowStorage, activities }),
+      );
+
+      await setAppState('active'); // before hydration
+      await act(async () => finishRead(serializeSession(running)));
+      await settle(result);
+
+      expect(result.current.session?.id).toBe('old');
+      expect(fake.calls).toEqual([]); // not ended, not recreated
+      expect(fake.activities.map(a => a.activityId)).toEqual(['a1']);
     });
 
     it('ends zombie activities when no session was saved', async () => {

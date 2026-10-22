@@ -3,8 +3,8 @@
  *
  * Every call goes through one FIFO queue, so rapid taps (start, stop, start,
  * stop...) reach ActivityKit strictly in order and one at a time. The Swift
- * side is an actor too; the two together are what keeps zombie activities
- * from appearing.
+ * side runs its jobs through a serial queue as well, so ordering holds even
+ * without this one; together they keep zombie activities from appearing.
  *
  * Failures are logged and swallowed: the timer must keep working even if the
  * Live Activity can't be shown (turned off in Settings, unsupported OS, etc).
