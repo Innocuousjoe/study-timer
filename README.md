@@ -125,3 +125,10 @@ To show the DEBUG panel, launch with `-debugPanel YES`; any `-debugCommand` also
 - **Permission.** Ask the first time a session with a goal starts, when the value is obvious. If the user declines, nothing else changes.
 - **Content.** "Goal reached 🎉" / "Chapter 5 Review: 25 min. Keep going, or stop when you're ready." Tapping it opens the app. A Stop action on the notification is possible, but it needs native handling while JS isn't running, so it's a follow-up.
 
+**Activity types (UI improvement).** The compact Dynamic Island has room for only a few characters of the session name, so long names end in "…". The spec asks for the truncated name there, so the app does that for now. Proposed alternative:
+
+- **Pick an activity when starting a session.** Starter set: Focusing, Studying, Reviewing, Meditating. Each has its own color and icon. None of the colors is green or gray, so "Goal reached" and "Paused" stay distinct.
+- **The color carries through the timer.** It would apply to the ring, the progress bar, the compact and minimal time, and the in-app timer screen. You'd tell at a glance what kind of session is running.
+- **The compact view shows the activity instead of a truncated name.** For example, "Studying" plus the time. SwiftUI's `ViewThatFits` could keep the full name when it fits and fall back to the activity only when it wouldn't, which never shows "…" and stays closest to the spec. The status word under the expanded ring would show the activity ("Studying") rather than the generic "Focusing".
+- **Plumbing.** The activity would be one more field on the session and one more fixed attribute on the Live Activity, like the name. A blank session name would default to the activity.
+
