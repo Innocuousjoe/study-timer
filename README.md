@@ -213,3 +213,12 @@ I built this with Claude Code. Below is where it was wrong, how each problem was
   - Stop is the natural place to write the record, computing focused time at that moment.
 - **Storage.** AsyncStorage is fine for a few hundred sessions. Beyond that, or for totals and search, SQLite is the better fit. Records stay on the device, with optional iCloud sync later.
 - **Natural follow-ons.** Streaks, a per-activity breakdown, and starting a new session from a past one ("repeat Chapter 5 Review, 50 min").
+
+**Pause, Resume and Stop on the Live Activity.** iOS 17+ lets Live Activities have real buttons. In the widget you'd write `Button(intent: PauseIntent())`, where the intent is a `LiveActivityIntent` from Apple's App Intents framework. A tap runs the intent's `perform()` inside the app's process; iOS launches the app in the background if it isn't running, and doesn't open it on screen. That code then updates or ends the activity. ("Start" doesn't fit there, because a Live Activity only exists while a session runs. Starting without opening the app would be a Control Center or Action Button control instead.)
+
+The work isn't the buttons; it's deciding where the state lives:
+
+- **JavaScript may not be running.** If the app was killed, iOS launches it just to run the intent, and React Native's JavaScript doesn't start. So the intent needs its own Swift copy of the pause and resume logic: set `pausedAt`, or move `startDate` forward on resume.
+- **The saved session has to move.** Today it lives in AsyncStorage, which the Swift intent can't easily write. If the intent paused only the Live Activity, the next launch's reconcile would trust the saved, still-running session and undo the Lock Screen pause. The session would move into storage both sides can reach, such as native `UserDefaults` exposed through the TurboModule, which then becomes the single source of truth.
+- **The app has to hear about it.** When the app is alive, the intent also sends an event to JavaScript through the TurboModule, so the on-screen timer pauses at once instead of on the next foreground.
+- **Tests.** The intent's Swift logic, the event handling in JavaScript, and the race where Pause is tapped on the Lock Screen while the app is saving.
