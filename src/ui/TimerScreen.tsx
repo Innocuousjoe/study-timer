@@ -203,6 +203,9 @@ export function TimerScreen({
           { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
         ]}
         keyboardShouldPersistTaps="handled"
+        // Feels fixed when everything fits; still scrolls on small screens,
+        // with large text or with the keyboard up, so nothing gets cut off.
+        alwaysBounceVertical={false}
       >
         <View style={styles.titleBlock}>
           <Text style={[styles.title, { color: t.text }]}>Study Timer</Text>
